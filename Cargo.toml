@@ -1,0 +1,25 @@
+[package]
+name = "akaimidi"
+version = "0.1.0"
+license = "ISC"
+edition = "2018"
+exclude = ["index.node"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+lazy_static = "1.4.0"
+midir = "0.9.1"
+crossbeam = "0.8.2"
+crossbeam-channel = "0.5.6"
+crossbeam-utils = "0.8.11"
+itertools = "0.10.5"
+flexi_logger = {version = "0.25.1", features=["async"]}
+log = "0.4.17"
+fundsp = "0.13.0"
+
+[dependencies.neon]
+version = "0.10"
+default-features = false
+features = ["napi-6"]
