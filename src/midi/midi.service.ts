@@ -128,8 +128,11 @@ export class MidiService {
     }
 
     samplerChangeProgramHeader(programNumber: number, index: number, value: number): boolean {
+        console.log("MidiService.samplerChangeProgramHeader: program number, indexm value", programNumber, index, value)
         let mapper = new SamplerInMemoryProgramMapper()
-        return midilib.sampler_change_program_header(programNumber, index, mapper.mapFromUIDataByIndex(index, value))
+        let convertedValue = mapper.mapFromUIDataByIndex(index, value)
+        console.log("MidiService.samplerChangeProgramHeader: convertedValue", convertedValue)
+        return midilib.sampler_change_program_header(programNumber, index, convertedValue)
     }
 
     samplerChangeKeyGroupHeader(programNumber: number, keygroupNumber: number, index: number, value: number): boolean {

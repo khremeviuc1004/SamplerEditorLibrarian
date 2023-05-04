@@ -709,6 +709,20 @@ export class SamplerMapperBase {
         return value
     }
 
+    convertToPlusOrMinusTwelve(value: number): number {
+        if (value >= 244) {
+            return value - 256
+        }
+        return value
+    }
+
+    convertFromPlusOrMinusTwelve(value: number): number {
+        if (value < 0) {
+            return 256 + value
+        }
+        return value
+    }
+
     convertToPlusOrMinusNineNineNine(value: number): number {
         if (value >= 55537) {
             return value - 65536

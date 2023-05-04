@@ -8,7 +8,7 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
 
     mapFromUIName(index: number, name: string): number[] {
         switch (index) {
-            case 3: 
+            case 3:
                 return this.convertNameToSamplerSysexName(name)
             default:
                 throw new Error("Index for name field is not correct.");
@@ -19,9 +19,26 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         let data: number[] = []
 
         switch (index) {
+            case 40:
+                data.push(this.convertFromPlusOrMinusTwelve(uiData))
+                break
             case 65:
                 data = this.convertFromPlusOrMinusFiftyIncludingFraction(uiData)
                 break
+            case 24:
+            case 26:
+            case 44:
+            case 45:
+            case 46:
+            case 47:
+            case 48:
+            case 49:
+            case 50:
+            case 51:
+            case 52:
+            case 53:
+            case 54:
+            case 55:
             case 89:
             case 90:
             case 91:
@@ -43,7 +60,7 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         let data: number[] = []
 
         // add all the elements with an initial value of 0 - not all elements are used by the editor but they are used internally or reserved
-        while(data.length < 192) {
+        while (data.length < 192) {
             data.push(0)
         }
 
@@ -72,7 +89,7 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         data[38] = program.lfo1.extraDepthModulationByVelocityAmount
 
         data[39] = program.pitchBend.bendWheelUp
-        data[40] = program.pitchBend.pressureModulation
+        data[40] = this.convertFromPlusOrMinusTwelve(program.pitchBend.pressureModulation)
 
         data[41] = program.modes.keyGroupCrossFade ? 1 : 0
         data[42] = program.numberOfKeyGroups
@@ -89,7 +106,7 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         data[53] = this.convertFromPlusOrMinusFifty(program.semiToneTuning.temperA)
         data[54] = this.convertFromPlusOrMinusFifty(program.semiToneTuning.temperASharp)
         data[55] = this.convertFromPlusOrMinusFifty(program.semiToneTuning.temperB)
-    
+
 
         data[59] = program.lfo1.desync ? 1 : 0
 
@@ -148,7 +165,7 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         data[100] = program.filter2FreqModulationInput2Type
         data[101] = program.filter2FreqModulationInput3Type
 
-        data[102] = program.lfo2.retrigger ? 0 : 1 // this is inverted for some reason
+        data[102] = program.lfo2.retrigger
 
         data[110] = program.portamento.rate
         data[111] = program.portamento.type
@@ -188,7 +205,7 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         program.lfo1.extraDepthModulationByVelocityAmount = data[38]
 
         program.pitchBend.bendWheelUp = data[39]
-        program.pitchBend.pressureModulation = data[40]
+        program.pitchBend.pressureModulation = this.convertToPlusOrMinusTwelve(data[40])
 
         program.modes.keyGroupCrossFade = data[41] == 0 ? false : true
         program.numberOfKeyGroups = data[42]
@@ -205,9 +222,9 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         program.semiToneTuning.temperA = this.convertToPlusOrMinusFifty(data[53])
         program.semiToneTuning.temperASharp = this.convertToPlusOrMinusFifty(data[54])
         program.semiToneTuning.temperB = this.convertToPlusOrMinusFifty(data[55])
-    
 
-        program.lfo1.desync = data[59] == 0 ? false: true
+
+        program.lfo1.desync = data[59] == 0 ? false : true
 
         program.midi.reassignment = this.convertReassignment(data[61])
 
@@ -262,7 +279,7 @@ export class SamplerInMemoryProgramMapper extends SamplerMapperBase implements S
         program.filter2FreqModulationInput2Type = this.convertSampleSysexModulationSourceType(data[100])
         program.filter2FreqModulationInput3Type = this.convertSampleSysexModulationSourceType(data[101])
 
-        program.lfo2.retrigger = data[102] == 1 ? false : true // this is inverted for some reason
+        program.lfo2.retrigger = data[102]
 
         program.portamento.rate = data[110]
         program.portamento.type = data[111] == 0 ? PortamentoType.RATE : PortamentoType.TIME

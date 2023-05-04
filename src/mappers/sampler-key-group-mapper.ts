@@ -25,6 +25,10 @@ export class SamplerInMemoryKeyGroupMapper extends SamplerMapperBase implements 
         console.log("Keygroup mapper - mapFromUIDataByIndex - received: ", uiData)
 
         switch (index) {
+            case 8:
+            case 178:
+                data.push(this.convertFromPlusOrMinusTwentyFour(uiData))
+                break
             case 5:
             case 48:
             case 96:
@@ -76,9 +80,6 @@ export class SamplerInMemoryKeyGroupMapper extends SamplerMapperBase implements 
             case 144:
             case 146:
                 data = this.convertFromPlusOrMinusNineNineNine(uiData)
-                break
-            case 178:
-                data.push(this.convertFromPlusOrMinusTwentyFour(uiData))
                 break
             default:
                 data.push(uiData)

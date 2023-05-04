@@ -276,6 +276,7 @@ export class MidiController {
         @Param('index') index: string,
         @Param('value') value: string
     ) {
+        console.log("MidiController.samplerChangeProgramHeader: program number, indexm value", programNumber, index, value)
         if (!this.midiService.samplerChangeProgramHeader(parseInt(programNumber), parseInt(index), parseFloat(value))) {
             throw new HttpException('Sampler did not like change for program.', HttpStatus.NOT_ACCEPTABLE)
         }
