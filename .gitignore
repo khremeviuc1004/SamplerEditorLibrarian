@@ -38,3 +38,12 @@ lerna-debug.log*
 
 # Rust
 /Cargo.lock
+
+# index.node
+index.node
+index.node.bak
+
+# packaged node executables
+sampler-editor-librarian-linux
+sampler-editor-librarian-macos
+sampler-editor-librarian-win.exe

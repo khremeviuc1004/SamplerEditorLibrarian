@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "type": "commonjs",
   "scripts": {
+    "build_all_on_linux": "npm i; cd ./modules/sampler-editor-librarian-dto; npm i, npm run build; cd ../sampler-editor-librarian-client;npm i;npm run build;cd ../../;npm run build",
     "build": "nest build; npm run neon:build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
