@@ -47,3 +47,8 @@ jobs:
     - run: npm run build
     - run: npm install -g pkg
     - run: pkg --debug -c ./package.json ./dist/main.js
+    - name: 'Upload Artifcat'
+      uses: actions/upload-artifact@v3
+      with:
+        name: sampler-editor-librarian-linux
+        path: ./sampler-editor-librarian-linux
