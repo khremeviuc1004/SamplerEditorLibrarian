@@ -45,3 +45,5 @@ jobs:
       run: npm run build
     - run: npm i
     - run: npm run build
+    - run: npm install -g pkg
+    - run: pkg --debug -c ./package.json ./dist/main.js
