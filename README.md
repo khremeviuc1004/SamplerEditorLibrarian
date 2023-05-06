@@ -1,3 +1,5 @@
+[![Node.js CI](https://github.com/khremeviuc1004/sampler-editor-librarian/actions/workflows/node.js.yml/badge.svg)](https://github.com/khremeviuc1004/sampler-editor-librarian/actions/workflows/node.js.yml)
+
 # Sampler Editor Librarian
 An editor librarian for Akai Samplers S2800/S3000/S3200
 
