@@ -28,11 +28,11 @@ jobs:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
     - run: cd ./modules/sampler-editor-librarian-dto
-    - run: npm ci
+    - run: npm i
     - run: npm run build
     - run: cd ../sampler-editor-librarian-client
-    - run: npm ci
+    - run: npm i
     - run: npm run build
     - run: cd ../../
-    - run: npm ci
+    - run: npm i
     - run: npm run build
