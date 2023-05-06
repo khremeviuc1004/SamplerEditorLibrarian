@@ -27,12 +27,17 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-    - run: cd ./modules/sampler-editor-librarian-dto
-    - run: npm ci
-    - run: npm run build
-    - run: cd ../sampler-editor-librarian-client
-    - run: npm ci
-    - run: npm run build
-    - run: cd ../../
-    - run: npm ci
+    - name: npm install sampler-editor-librarian-dto
+      working-directory: ./modules/sampler-editor-librarian-dto
+      run: npm i
+    - name: npm run build sampler-editor-librarian-dto
+      working-directory: ./modules/sampler-editor-librarian-dto
+      run: npm run build
+    - name: npm i sampler-editor-librarian-client
+      working-directory: ./modules/sampler-editor-librarian-client
+      run: npm i
+    - name: npm run build sampler-editor-librarian-client
+      working-directory: ./modules/sampler-editor-librarian-client
+      run: npm run build
+    - run: npm i
     - run: npm run build
