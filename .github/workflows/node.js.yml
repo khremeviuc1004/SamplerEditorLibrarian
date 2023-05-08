@@ -12,11 +12,15 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.config.os }}
 
     strategy:
       matrix:
         node-version: [18.x]
+        config:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
 
     steps:
     - uses: actions/checkout@v3
@@ -47,8 +51,21 @@ jobs:
     - run: npm run build
     - run: npm install -g pkg
     - run: pkg --debug -c ./package.json ./dist/main.js
-    - name: 'Upload Artifcat'
+    - if: matrix.config.os == 'ubuntu-latest'
+    - name: 'Upload Linux Artifcat'
       uses: actions/upload-artifact@v3
       with:
         name: sampler-editor-librarian-linux
         path: ./sampler-editor-librarian-linux
+    - if: matrix.config.os == 'windows-latest'
+    - name: 'Upload Windows Artifcat'
+      uses: actions/upload-artifact@v3
+      with:
+        name: sampler-editor-librarian-windows.exe
+        path: ./sampler-editor-librarian-windows.exe
+    - if: matrix.config.os == 'macos-latest'
+    - name: 'Upload MacOS Artifcat'
+      uses: actions/upload-artifact@v3
+      with:
+        name: sampler-editor-librarian-macos
+        path: ./sampler-editor-librarian-macos
