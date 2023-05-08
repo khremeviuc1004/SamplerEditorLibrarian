@@ -58,57 +58,57 @@ jobs:
         name: sampler-editor-librarian-linux
         path: ./sampler-editor-librarian-linux
         
-  windows_build:
-    name: Windows build
+#   windows_build:
+#     name: Windows build
 
-    runs-on: windows-latest
+#     runs-on: windows-latest
 
-    strategy:
-      matrix:
-        node-version: [18.x]
+#     strategy:
+#       matrix:
+#         node-version: [18.x]
 
-    steps:
-    - uses: actions/checkout@v3
-      with:
-        submodules: recursive
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    - name: npm install sampler-editor-librarian-dto
-      working-directory: ./modules/sampler-editor-librarian-dto
-      run: npm i
-    - name: npm run build sampler-editor-librarian-dto
-      working-directory: ./modules/sampler-editor-librarian-dto
-      run: npm run build
-    - name: npm i sampler-editor-librarian-client
-      working-directory: ./modules/sampler-editor-librarian-client
-      run: npm i
-    - name: npm run build sampler-editor-librarian-client
-      working-directory: ./modules/sampler-editor-librarian-client
-      run: npm run build
-    - name: npm i sampler-editor-librarian
-      run: npm i
-    - name: Install latest rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        default: true
-        override: true
-    - name: Install nestjs CLI
-      run: npm i -g @nestjs/cli
-    - name: npm run build-release sampler-editor-librarian
-      run: npm run build-release
-    - name: npm install -g pkg sampler-editor-librarian
-      run: npm install -g pkg
-    - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
-      run: pkg --debug -c ./package.json ./dist/main.js
-    - name: 'Upload Windows Artifcat'
-      uses: actions/upload-artifact@v3
-      with:
-        name: sampler-editor-librarian-win.exe
-        path: ./sampler-editor-librarian-win.exe
+#     steps:
+#     - uses: actions/checkout@v3
+#       with:
+#         submodules: recursive
+#     - name: Use Node.js ${{ matrix.node-version }}
+#       uses: actions/setup-node@v3
+#       with:
+#         node-version: ${{ matrix.node-version }}
+#         cache: 'npm'
+#     - name: npm install sampler-editor-librarian-dto
+#       working-directory: ./modules/sampler-editor-librarian-dto
+#       run: npm i
+#     - name: npm run build sampler-editor-librarian-dto
+#       working-directory: ./modules/sampler-editor-librarian-dto
+#       run: npm run build
+#     - name: npm i sampler-editor-librarian-client
+#       working-directory: ./modules/sampler-editor-librarian-client
+#       run: npm i
+#     - name: npm run build sampler-editor-librarian-client
+#       working-directory: ./modules/sampler-editor-librarian-client
+#       run: npm run build
+#     - name: npm i sampler-editor-librarian
+#       run: npm i
+#     - name: Install latest rust toolchain
+#       uses: actions-rs/toolchain@v1
+#       with:
+#         toolchain: stable
+#         default: true
+#         override: true
+#     - name: Install nestjs CLI
+#       run: npm i -g @nestjs/cli
+#     - name: npm run build-release sampler-editor-librarian
+#       run: npm run build-release
+#     - name: npm install -g pkg sampler-editor-librarian
+#       run: npm install -g pkg
+#     - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
+#       run: pkg --debug -c ./package.json ./dist/main.js
+#     - name: 'Upload Windows Artifcat'
+#       uses: actions/upload-artifact@v3
+#       with:
+#         name: sampler-editor-librarian-win.exe
+#         path: ./sampler-editor-librarian-win.exe
 
         
   macos_build:
