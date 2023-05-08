@@ -96,6 +96,8 @@ jobs:
         toolchain: stable
         default: true
         override: true
+    - name: Install nestjs CLI
+      run: npm i -g @nestjs/cli
     - name: npm run build-release sampler-editor-librarian
       run: npm run build-release
     - name: npm install -g pkg sampler-editor-librarian
