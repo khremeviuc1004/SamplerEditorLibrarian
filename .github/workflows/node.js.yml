@@ -10,17 +10,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  linux_build:
+    name: Linux build
 
-    runs-on: ${{ matrix.config.os }}
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
         node-version: [18.x]
-        config:
-          - os: ubuntu-latest
-          - os: macos-latest
-          - os: windows-latest
 
     steps:
     - uses: actions/checkout@v3
@@ -51,20 +48,96 @@ jobs:
     - run: npm run build
     - run: npm install -g pkg
     - run: pkg --debug -c ./package.json ./dist/main.js
-    - if: matrix.config.os == 'ubuntu-latest'
     - name: 'Upload Linux Artifcat'
       uses: actions/upload-artifact@v3
       with:
         name: sampler-editor-librarian-linux
         path: ./sampler-editor-librarian-linux
-    - if: matrix.config.os == 'windows-latest'
+        
+  windows_build:
+    name: Windows build
+
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: libasound2-dev 
+        version: 1.0
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    - name: npm install sampler-editor-librarian-dto
+      working-directory: ./modules/sampler-editor-librarian-dto
+      run: npm i
+    - name: npm run build sampler-editor-librarian-dto
+      working-directory: ./modules/sampler-editor-librarian-dto
+      run: npm run build
+    - name: npm i sampler-editor-librarian-client
+      working-directory: ./modules/sampler-editor-librarian-client
+      run: npm i
+    - name: npm run build sampler-editor-librarian-client
+      working-directory: ./modules/sampler-editor-librarian-client
+      run: npm run build
+    - run: npm i
+    - run: npm run build
+    - run: npm install -g pkg
+    - run: pkg --debug -c ./package.json ./dist/main.js
     - name: 'Upload Windows Artifcat'
       uses: actions/upload-artifact@v3
       with:
         name: sampler-editor-librarian-windows.exe
         path: ./sampler-editor-librarian-windows.exe
-    - if: matrix.config.os == 'macos-latest'
-    - name: 'Upload MacOS Artifcat'
+
+        
+  macos_build:
+    name: Mac OS build
+
+    runs-on: macos-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: libasound2-dev 
+        version: 1.0
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    - name: npm install sampler-editor-librarian-dto
+      working-directory: ./modules/sampler-editor-librarian-dto
+      run: npm i
+    - name: npm run build sampler-editor-librarian-dto
+      working-directory: ./modules/sampler-editor-librarian-dto
+      run: npm run build
+    - name: npm i sampler-editor-librarian-client
+      working-directory: ./modules/sampler-editor-librarian-client
+      run: npm i
+    - name: npm run build sampler-editor-librarian-client
+      working-directory: ./modules/sampler-editor-librarian-client
+      run: npm run build
+    - run: npm i
+    - run: npm run build
+    - run: npm install -g pkg
+    - run: pkg --debug -c ./package.json ./dist/main.js
+    - name: 'Upload Mac OS Artifcat'
       uses: actions/upload-artifact@v3
       with:
         name: sampler-editor-librarian-macos
