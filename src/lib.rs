@@ -1,4 +1,4 @@
-use std::{time::{Duration}, collections::{HashMap, VecDeque}, sync::{Arc, Mutex}, fmt::Debug};
+use std::{borrow::BorrowMut, collections::{HashMap, VecDeque}, fmt::Debug, sync::{Arc, Mutex}, time::Duration};
 
 use fundsp::{hacker32::{square_hz, triangle_hz, sine_hz, pulse, saw_hz, U1}, prelude::{An, Pipe, Constant, Sine, PulseWave}, wavetable::WaveSynth};
 use itertools::Itertools;
@@ -30,6 +30,7 @@ const SAMPLE_DUMP_STANDARD_DATA_ACK: u8 = 0x7F;
 const NUMBER_OF_MIDI_EVENTS_TO_READ: usize = 100000;
 
 const RECEIVE_TIMEOUT: Duration = Duration::from_secs(2);
+const LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT: Duration = Duration::from_secs(60);
 
 const AKAI_HEADER_SIZE_IN_BYTES: u16 = 192;
 const U16_LSB_TO_AKAI_U8_MASK: u16 = 127;
@@ -39,6 +40,7 @@ const U32_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT: u32 = 7;
 const NAME_ENTRY_SIZE_IN_BYTES: u16 = 12;
 const CUE_LIST_SIZE_IN_BYTES: u16 = 128;
 const TAKE_LIST_SIZE_IN_BYTES: u16 = 128;
+const VOLUME_LIST_ENTRY_SIZE_IN_BYTES: u16 = 16;
 
 struct Oscillator {
     square: An<Pipe<f32, Constant<U1, f32>, WaveSynth<'static, f32, U1>>>,
@@ -53,7 +55,7 @@ impl Oscillator {
     fn new(frequency: f32, template: String) -> Self {
         let mut pulse = pulse();
 
-        // need to set the frequency ofr the pulse
+        // need to set the frequency of the pulse
 
         Self {
             square: square_hz(frequency),
@@ -138,10 +140,23 @@ enum IncomingSamplerEvent {
     RequestKeygroupHeader(u16, u8),
     RequestSampleHeader(u16),
     RequestSampleData(u16, u32),
-    RequestFXReverb(u16, u8),
+    RequestFXReverb(u16, u8, u16, u16), // item number, selector (0 = effects file header, 1 = prog num/effect num assignment table, 2 = effect parameters, 3 = prog num/reverb num, 4 = reverb parameters), number of bytes to get, byte offset
+    ResponseFXReverb(u16, u8, u16, Vec<u8>), // item number, selector, offset, data
     RequestCueList(u16, u8),
     RequestTakeList(u16, u8),
     RequestMiscellaneousBytes(u16, u8),
+    SelectFloppy,
+    SelectHardDrive,
+    HardDriveNumberOfPartitions,
+    HardDriveSelectedPartition,
+    SelectHardDrivePartition(u8), // partition number
+    HardDrivePartitionNumberOfVolumes,
+    HardDrivePartitionSelectedVolume,
+    SelectHardDriveVolume(u8), // volume number
+    ClearMemoryAndLoadFromSelectedVolume(u8), // load type
+    LoadFromSelectedVolume(u8), // load type
+    ClearVolumeAndSaveMemoryToSelectedVolume(u8), // save type
+    SaveMemoryToSelectedVolume(u8), // save type
     RequestVolumeList(u16),
     RequestHardDiskDirEntry(u16, u8),
     RequestResidentProgramNames,
@@ -158,6 +173,7 @@ enum IncomingSamplerEvent {
     ChangeProgramHeader(u8, u8, Vec<u8>), // program_number, offset into header, vector of changed byte data
     ChangeKeyGroupHeader(u8, u8, u8, Vec<u8>), // program_number, keygroup number, offset into header, vector of changed byte data
     ChangeSampleHeader(u8, u8, Vec<u8>), // sample_number, offset into header, vector of changed byte data
+    ChangeS1000MiscBytes(u8, u8, u8, u8, u8, u8), // basic_midi_channel, selected_program_number, midi_play_commands_omni_override, midi_exlusive_channel, basic_channel_omni, midi_program_select_enable
 }
 
 #[derive(Clone)]
@@ -165,11 +181,11 @@ enum OutgoingSamplerEvent {
     ProgramHeader(Vec<u8>),
     KeygroupHeader(Vec<u8>),
     SampleHeader(Vec<u8>),
-    FXReverb,
+    FXReverb(Vec<u8>),
     CueList,
     TakeList,
-    MiscellaneousBytes,
-    VolumeList(String, Option<String>),
+    MiscellaneousBytes(String, Option<String>),
+    VolumeList(String, Option<String>, bool, u8), // name, error msg?, active, volume type - 1 for S1000, 3 for S3000 
     HardDiskDirEntry(String, Option<String>),
     ResidentProgramNames(Vec<String>, Option<String>),
     ResidentSampleNames(Vec<String>, Option<String>),
@@ -177,6 +193,10 @@ enum OutgoingSamplerEvent {
     S1000MiscellaneousData(HashMap<String, i32>, Option<String>),
     S1000CommandReply(bool),
     SampleData(Vec<u16>),
+    HardDriveNumberOfPartitions(u8),
+    HardDriveSelectedPartition(u8),
+    HardDrivePartitionNumberOfVolumes(u8),
+    HardDrivePartitionSelectedVolume(u8),
 }
 
 #[derive(Clone)]
@@ -390,7 +410,7 @@ impl SampleSysexMessageHandler for SampleSysexVolumeListMessageHandler {
         info!("message length={}, entry_number={}", message.len(), entry_number);
         
         let range_start = 12;
-        let range_end = range_start + 24;
+        let range_end = range_start + (16 * 2);
         let record = &message[range_start..range_end];
 
         let mut string_buf = format!("range_start={}, range_end={} - ", range_start, range_end);
@@ -415,14 +435,89 @@ impl SampleSysexMessageHandler for SampleSysexVolumeListMessageHandler {
         }
         info!("{}", string_buf.as_str());
 
-        let name = convert_sampler_sysex_name_to_name(&unnibbled_record);
-        info!("{}", name.as_str());
+        let volume_name = convert_sampler_sysex_name_to_name(&unnibbled_record);
+        let volume_type = unnibbled_record[12];
+        let volume_is_active = unnibbled_record[12] > 0;
+        let volume_load_number = unnibbled_record[13];
+        info!("Volume: name={}, active={}, type={}, load number={}", volume_name.as_str(), volume_is_active, volume_type, volume_load_number);
 
-        let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::VolumeList(name, None)));
+        let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::VolumeList(volume_name, None, volume_is_active, volume_type)));
     }
 
     fn name(&self) -> String {
         String::from("SampleSysexVolumeListMessageHandler")
+    }
+}
+
+struct SampleSysexReverbFXListMessageHandler;
+
+impl SampleSysexMessageHandler for SampleSysexReverbFXListMessageHandler {
+    fn can_handle(&self, message: &Vec<u8>) -> bool {
+        for (index, sysex_byte) in message.iter().enumerate() {
+            if index == 0 && *sysex_byte != START_OF_SYSTEM_EXCLUSIVE {
+                info!("{}: Start of sysex incorrect.", self.name());
+                return false
+            }
+            else if index == 1 && *sysex_byte != SAMPLER_MANUFACTURER_CODE {
+                info!("{}: Sysex manufacturer incorrect.", self.name());
+                return false
+            }
+            else if index == 3 && *sysex_byte != S3000SysexFunctionCodes::ResponseFXReverb as u8 {
+                info!("{}: Sysex function code incorrect.", self.name());
+                return false
+            }
+            else if index == 4 && *sysex_byte != SAMPLER_IDENTITY {
+                info!("{}: Sysex sampler identity incorrect.", self.name());
+                return false
+            }
+            else if (index + 1) == message.len() && *sysex_byte != EOX  {
+                info!("{}: Sysex is not terminated properly.", self.name());
+                return false
+            }
+        }
+
+        true
+    }
+
+    fn handle(&self, message: &Vec<u8>, sender: &Sender<OutgoingEvent>) {
+        let item_number_data = &message[5..7];
+        let item_number = item_number_data[0] | (item_number_data[1] << 7);
+        let number_of_bytes_data = &message[10..12];
+        let number_of_bytes = number_of_bytes_data[0] as u16 /* lsb */ | ((number_of_bytes_data[1] as u16) /* msb */ << 7); // this should be left shifted 7 (note nibbled - 14bit value)
+
+        info!("message length={}, item_number={}, number_of_bytes={}, number_of_bytes_data[0]={}, number_of_bytes_data[1]={}", message.len(), item_number, number_of_bytes, number_of_bytes_data[0], number_of_bytes_data[1]);
+        
+        let range_start = 12;
+        let range_end = range_start + ((number_of_bytes * 2) as usize);
+        let record = &message[range_start..range_end];
+
+        let mut string_buf = format!("range_start={}, range_end={} - ", range_start, range_end);
+        let mut unnibbled_record = vec![];
+        let mut unnibbled_value: u8 = 0;
+        for (nibble_index, nibble) in record.iter().enumerate() {
+            string_buf.push_str(format!("{}, ", nibble).as_str());
+
+            if nibble_index % 2 == 0 {
+                unnibbled_value = *nibble;
+            }
+            else {
+                unnibbled_record.push(unnibbled_value | (*nibble << 4));
+            }
+        }
+        info!("{}", string_buf.as_str());
+
+        string_buf.clear();
+        string_buf.push_str("Unnibbled: ");
+        for value in unnibbled_record.iter() {
+            string_buf.push_str(format!("{}, ", value).as_str());
+        }
+        info!("{}", string_buf.as_str());
+
+        let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::FXReverb(unnibbled_record)));
+    }
+
+    fn name(&self) -> String {
+        String::from("SampleSysexReverbFXListMessageHandler")
     }
 }
 
@@ -458,20 +553,20 @@ impl SampleSysexMessageHandler for SampleSysexMiscellaneousBytesMessageHandler {
 
     fn handle(&self, message: &Vec<u8>, sender: &Sender<OutgoingEvent>) {
         let data_index_data = &message[5..7];
-        let data_number = data_index_data[0] | (data_index_data[1] << 4);
+        let data_index = data_index_data[0] | (data_index_data[1] << 4);
+        let data_bank_number = message[7];
+        let number_of_bytes_of_data = message[10] | (message[11] << 4);
 
-        info!("message length={}, data_number={}", message.len(), data_number);
+        info!("message length={}, data_index={}, data bank number={}", message.len(), data_index, data_bank_number);
         
         let range_start = 12;
-        let range_end = range_start + 24;
+        let range_end = range_start + (number_of_bytes_of_data as usize * 2);
         let record = &message[range_start..range_end];
 
         let mut string_buf = format!("range_start={}, range_end={} - ", range_start, range_end);
         let mut unnibbled_record = vec![];
         let mut unnibbled_value: u8 = 0;
         for (nibble_index, nibble) in record.iter().enumerate() {
-            string_buf.push_str(format!("{}, ", nibble).as_str());
-
             if nibble_index % 2 == 0 {
                 unnibbled_value = *nibble;
             }
@@ -479,19 +574,26 @@ impl SampleSysexMessageHandler for SampleSysexMiscellaneousBytesMessageHandler {
                 unnibbled_record.push(unnibbled_value | (*nibble << 4));
             }
         }
-        info!("{}", string_buf.as_str());
 
-        string_buf.clear();
         string_buf.push_str("Unnibbled: ");
         for value in unnibbled_record.iter() {
             string_buf.push_str(format!("{}, ", value).as_str());
         }
         info!("{}", string_buf.as_str());
 
-        let name = convert_sampler_sysex_name_to_name(&unnibbled_record);
-        info!("{}", name.as_str());
+        // can only do the next 2 commented out lines when requesting a name
+        // let name = convert_sampler_sysex_name_to_name(&unnibbled_record);
+        // info!("{}", name.as_str());
 
-        let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::VolumeList(name, None)));
+        let _ = match data_index {
+            1 => sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::HardDriveNumberOfPartitions(unnibbled_record[0]))),
+            2 => sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::HardDriveSelectedPartition(unnibbled_record[0]))),
+            3 => sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::HardDrivePartitionNumberOfVolumes(unnibbled_record[0]))),
+            4 => sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::HardDrivePartitionSelectedVolume(unnibbled_record[0]))),
+            _ => Ok(())
+        };
+
+        ()
     }
 
     fn name(&self) -> String {
@@ -562,14 +664,14 @@ impl SampleSysexMessageHandler for SampleSysexHardDiskDirectoryEntryMessageHandl
         }
         info!("{}", string_buf.as_str());
 
-        if selector > 0 {
+        // if selector >= 0 {
             let name = convert_sampler_sysex_name_to_name(&unnibbled_record);
             info!("{}", name.as_str());    
             let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::HardDiskDirEntry(name, None)));
-        }
-        else {
-            let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::HardDiskDirEntry("".to_string(), Some("Selector was less than 0".to_string()))));
-        }
+        // }
+        // else {
+        //     let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::HardDiskDirEntry("".to_string(), Some("Selector was less than 0".to_string()))));
+        // }
     }
 
     fn name(&self) -> String {
@@ -710,6 +812,7 @@ impl SampleSysexMessageHandler for SampleSysexS1000MiscellaneousDataMessageHandl
         let mut midi_program_select_enable = 0;
         let mut selected_program_number = 0;
         let mut midi_play_commands_omni_override = 0;
+        let mut midi_exlusive_channel = 0;
 
         for (index, sysex_byte) in message.iter().enumerate() {
             if index == 5 {
@@ -741,6 +844,12 @@ impl SampleSysexMessageHandler for SampleSysexS1000MiscellaneousDataMessageHandl
             }
             else if index == 14 {
                 data.insert("midi_play_commands_omni_override".to_string(), (((*sysex_byte) << 4) | midi_play_commands_omni_override) as i32);
+            }
+            else if index == 15 {
+                midi_exlusive_channel = *sysex_byte;
+            }
+            else if index == 16 {
+                data.insert("midi_exlusive_channel".to_string(), (((*sysex_byte) << 4) | midi_exlusive_channel) as i32);
             }
         }
         let _ = sender.send(OutgoingEvent::SamplerEvent(OutgoingSamplerEvent::S1000MiscellaneousData(data, None)));
@@ -1157,6 +1266,7 @@ impl SampleSysexMessageProcessor {
             Box::new(SampleSysexProgramHeaderMessageHandler),
             Box::new(SampleSysexKeyGroupHeaderMessageHandler),
             Box::new(SampleSysexSampleHeaderMessageHandler),
+            Box::new(SampleSysexReverbFXListMessageHandler),
         ];
         Self {
             handlers,
@@ -1297,8 +1407,8 @@ fn sampler_delete_program(mut cx: FunctionContext) -> JsResult<JsBoolean> {
         let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::DeleteProgram(program_number)));
         
         if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-            if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                     return Ok(cx.boolean(success))
                 }
             }
@@ -1317,8 +1427,8 @@ fn sampler_delete_keygroup(mut cx: FunctionContext) -> JsResult<JsBoolean> {
             let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::DeleteKeygroup(program_number, keygroup_number)));
         
             if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                    if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+                if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                    if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                         return Ok(cx.boolean(success))
                     }
                 }
@@ -1336,8 +1446,8 @@ fn sampler_delete_sample(mut cx: FunctionContext) -> JsResult<JsBoolean> {
         let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::DeleteSample(sample_number)));
         
         if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-            if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                     return Ok(cx.boolean(success))
                 }
             }
@@ -1372,8 +1482,8 @@ fn sampler_new_program(mut cx: FunctionContext) -> JsResult<JsBoolean> {
             if sysex_payload.len() == 192 {
                 let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::NewProgram(program_number, sysex_payload)));
                 if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                    if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                        if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+                    if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                        if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                             return Ok(cx.boolean(success))
                         }
                     }
@@ -1415,8 +1525,8 @@ fn sampler_new_sample_from_template(mut cx: FunctionContext) -> JsResult<JsBoole
                 if sysex_payload.len() == 192 {
                     let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::NewSampleFromTemplate(sample_number, template, sysex_payload)));
                     if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                        if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+                        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                                 return Ok(cx.boolean(success))
                             }
                         }
@@ -1456,8 +1566,8 @@ fn sampler_new_keygroup(mut cx: FunctionContext) -> JsResult<JsBoolean> {
                 if sysex_payload.len() == 192 {
                     let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::NewKeygroup(program_number, keygroup_number, sysex_payload)));
                     if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                        if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+                        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                                 return Ok(cx.boolean(success))
                             }
                         }
@@ -1478,8 +1588,8 @@ fn sampler_new_sample(mut cx: FunctionContext) -> JsResult<JsBoolean> {
         let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::NewSample(sample_number)));
         
         if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-            if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                     return Ok(cx.boolean(success))
                 }
             }
@@ -1572,8 +1682,8 @@ fn sampler_request_keygroup_header(mut cx: FunctionContext) -> JsResult<JsArray>
             info!("Found a keygroup number: {}", keygroup_number);
 
             if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                    if let OutgoingSamplerEvent::KeygroupHeader(data) = sample_event {
+                if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                    if let OutgoingSamplerEvent::KeygroupHeader(data) = sampler_event {
                         let message = cx.empty_array();
 
                         for (index, value) in data.iter().enumerate() {
@@ -1627,8 +1737,8 @@ fn sampler_change_keygroup_header(mut cx: FunctionContext) -> JsResult<JsBoolean
                     let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(
                         IncomingSamplerEvent::ChangeKeyGroupHeader(program_number, keygroup_number, keygroup_header_offset, changed_keygroup_header_data)));
                     if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                        if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+                        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                                 return Ok(cx.boolean(success))
                             }
                         }
@@ -1649,8 +1759,8 @@ fn sampler_request_sample_header(mut cx: FunctionContext) -> JsResult<JsArray> {
         let sample_number = sample_number.value(&mut cx) as u16;
         let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestSampleHeader(sample_number)));
         if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-            if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                if let OutgoingSamplerEvent::SampleHeader(data) = sample_event {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::SampleHeader(data) = sampler_event {
                     let message = cx.empty_array();
 
                     for (index, value) in data.iter().enumerate() {
@@ -1693,8 +1803,8 @@ fn sampler_change_sample_header(mut cx: FunctionContext) -> JsResult<JsBoolean> 
                 let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(
                     IncomingSamplerEvent::ChangeSampleHeader(sample_number, sample_header_offset, changed_sample_header_data)));
                 if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                    if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                        if let OutgoingSamplerEvent::S1000CommandReply(success) = sample_event {
+                    if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                        if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
                             return Ok(cx.boolean(success))
                     }
                     }
@@ -1706,20 +1816,652 @@ fn sampler_change_sample_header(mut cx: FunctionContext) -> JsResult<JsBoolean> 
     return Ok(cx.boolean(false))
 }
 
+fn sampler_change_s1000_misc_bytes(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_change_s1000_misc_bytes...");
+    // s1000_misc_data.basicMidiChannel,
+    // s1000_misc_data.basicChannelOmni,
+    // s1000_misc_data.midiProgramSelectEnable,
+    // s1000_misc_data.selectedProgramNumber,
+    // s1000_misc_data.midiPlayCommandsOmniOverride,
+    // s1000_misc_data.midiExlusiveChannel,
+
+    if let Ok(basic_midi_channel) = cx.argument::<JsNumber>(0) {
+        let basic_midi_channel = basic_midi_channel.value(&mut cx) as u8;
+
+        if let Ok(basic_channel_omni) = cx.argument::<JsNumber>(1) {
+            let basic_channel_omni = basic_channel_omni.value(&mut cx) as u8;
+
+            if let Ok(midi_program_select_enable) = cx.argument::<JsNumber>(2) {
+                let midi_program_select_enable = midi_program_select_enable.value(&mut cx) as u8;
+
+
+                if let Ok(selected_program_number) = cx.argument::<JsNumber>(3) {
+                    let selected_program_number = selected_program_number.value(&mut cx) as u8;
+    
+
+                    if let Ok(midi_play_commands_omni_override) = cx.argument::<JsNumber>(4) {
+                        let midi_play_commands_omni_override = midi_play_commands_omni_override.value(&mut cx) as u8;
+        
+
+                        if let Ok(midi_exclusive_channel) = cx.argument::<JsNumber>(5) {
+                            let midi_exclusive_channel = midi_exclusive_channel.value(&mut cx) as u8;
+            
+                            let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(
+                            IncomingSamplerEvent::ChangeS1000MiscBytes(basic_midi_channel, selected_program_number, midi_play_commands_omni_override, midi_exclusive_channel, basic_channel_omni, midi_program_select_enable)));
+                            // if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+                            //     if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                            //         if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                            //             return Ok(cx.boolean(success))
+                            //         }
+                            //     }
+                            // }
+                        }
+                    }
+                }
+            }
+        }
+    }
+                    
+    return Ok(cx.boolean(true))
+}
+
+fn sampler_select_floppy(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_select_floppy...");
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::SelectFloppy));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                return Ok(cx.boolean(true))
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_select_harddrive(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_select_harddrive...");
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::SelectHardDrive));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                return Ok(cx.boolean(true))
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_harddrive_number_of_partitions(mut cx: FunctionContext) -> JsResult<JsNumber> {
+    info!("Entered sampler_harddrive_number_of_partitions...");
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::HardDriveNumberOfPartitions));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::HardDriveNumberOfPartitions(number_of_partitions) = sampler_event {
+                return Ok(cx.number(number_of_partitions))
+            }
+        }
+    }
+
+    Ok(cx.number(0))
+}
+
+fn sampler_harddrive_selected_partition(mut cx: FunctionContext) -> JsResult<JsNumber> {
+    info!("Entered sampler_harddrive_selected_partition...");
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::HardDriveSelectedPartition));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::HardDriveSelectedPartition(selected_partition) = sampler_event {
+                return Ok(cx.number(selected_partition))
+            }
+        }
+    }
+
+    Ok(cx.number(0))
+}
+
+fn sampler_select_harddrive_partition(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_select_harddrive_partition...");
+    if let Ok(partition_number) = cx.argument::<JsNumber>(0) {
+        let partition_number = partition_number.value(&mut cx) as u8;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::SelectHardDrivePartition(partition_number)));
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(s1000_command_reply) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = s1000_command_reply {
+                    return Ok(cx.boolean(success))
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_harddrive_partition_number_of_volumes(mut cx: FunctionContext) -> JsResult<JsNumber> {
+    info!("Entered sampler_harddrive_partition_number_of_volumes...");
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::HardDrivePartitionNumberOfVolumes));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::HardDrivePartitionNumberOfVolumes(number_of_volumes) = sampler_event {
+                return Ok(cx.number(number_of_volumes))
+            }
+        }
+    }
+
+    Ok(cx.number(0))
+}
+
+fn sampler_harddrive_partition_selected_volume(mut cx: FunctionContext) -> JsResult<JsNumber> {
+    info!("Entered sampler_harddrive_partition_selected_volume...");
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::HardDrivePartitionSelectedVolume));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::HardDrivePartitionSelectedVolume(selected_volume) = sampler_event {
+                return Ok(cx.number(selected_volume))
+            }
+        }
+    }
+
+    Ok(cx.number(0))
+}
+
+fn sampler_effects_list(mut cx: FunctionContext) -> JsResult<JsArray> {
+    info!("Entered sampler_effects_list...");
+    let effect_params_block_size: usize = 64;
+    let all_effect_blocks_size = (50 /* # effects */ + 50 /* number of reverbs */) * effect_params_block_size; // looks like the data is interleaved
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestFXReverb(0, 2, all_effect_blocks_size as u16, 0)));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::FXReverb(byte_data) = sampler_event {
+                info!("byte_data.len()={}", byte_data.len());
+
+                if byte_data.len() == all_effect_blocks_size {
+                    let effect_names = cx.empty_array();
+
+                    let mut name_index = 0;
+                    for index in (0..all_effect_blocks_size).step_by(effect_params_block_size * 2) {
+                        let mut effect_name_data = vec![];
+                        for letter_position in 0..12 {
+                            effect_name_data.push(byte_data[index + letter_position]);
+                        }
+                        
+                        let effect_name = convert_sampler_sysex_name_to_name(&effect_name_data);
+                        let js_effect_name = cx.string(effect_name);
+                        let _ = effect_names.set(&mut cx, name_index, js_effect_name);
+                        name_index += 1;
+                    }
+
+                    return Ok(effect_names);
+                }
+                else {
+                    info!("byte_data is not {}", all_effect_blocks_size);
+                }
+            }
+        }
+    }
+
+    Ok(cx.empty_array())
+}
+
+fn sampler_reverbs_list(mut cx: FunctionContext) -> JsResult<JsArray> {
+    info!("Entered sampler_reverbs_list...");
+    let reverb_params_block_size: usize = 64;
+    let all_reverb_blocks_size = (50 /* # effects */ + 50 /* number of reverbs */) * reverb_params_block_size; // looks like the data is interleaved
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestFXReverb(0, 4, all_reverb_blocks_size as u16, 0)));
+
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::FXReverb(byte_data) = sampler_event {
+                info!("byte_data.len()={}", byte_data.len());
+
+                if byte_data.len() == all_reverb_blocks_size {
+                    let reverb_names = cx.empty_array();
+
+                    let mut name_index = 0;
+                    for index in (0..all_reverb_blocks_size).step_by(reverb_params_block_size * 2) {
+                        let mut reverb_name_data = vec![];
+                        for letter_position in 0..12 {
+                            reverb_name_data.push(byte_data[index + letter_position]);
+                        }
+                        
+                        let reverb_name = convert_sampler_sysex_name_to_name(&reverb_name_data);
+                        let js_reverb_name = cx.string(reverb_name);
+                        let _ = reverb_names.set(&mut cx, name_index, js_reverb_name);
+                        name_index += 1;
+                    }
+
+                    return Ok(reverb_names);
+                }
+                else {
+                    info!("byte_data is not {}", all_reverb_blocks_size);
+                }
+            }
+        }
+    }
+
+    Ok(cx.empty_array())
+}
+
+fn sampler_effect(mut cx: FunctionContext) -> JsResult<JsArray> {
+    info!("Entered sampler_effect...");
+
+    if let Ok(effect_number) = cx.argument::<JsNumber>(0) {
+        let effect_number = effect_number.value(&mut cx) as u16;
+        let effect_params_block_size: usize = 64;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestFXReverb(effect_number, 2, effect_params_block_size as u16, 0)));
+
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::FXReverb(byte_data) = sampler_event {
+                    info!("byte_data.len()={}", byte_data.len());
+
+                    if byte_data.len() == effect_params_block_size {
+                        let effect_data = cx.empty_array();
+
+                        for index in 0..effect_params_block_size {
+                            let js_effect_data_byte = cx.number(byte_data[index]);
+                            let _ = effect_data.set(&mut cx, index as u32, js_effect_data_byte);
+                        }
+
+                        return Ok(effect_data);
+                    }
+                    else {
+                        info!("byte_data is not {}", effect_params_block_size);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.empty_array())
+}
+
+fn sampler_reverb(mut cx: FunctionContext) -> JsResult<JsArray> {
+    info!("Entered sampler_reverb...");
+
+    if let Ok(reverb_number) = cx.argument::<JsNumber>(0) {
+        let reverb_number = reverb_number.value(&mut cx) as u16;
+        let reverb_params_block_size: usize = 64;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestFXReverb(reverb_number, 4, reverb_params_block_size as u16, 0)));
+
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::FXReverb(byte_data) = sampler_event {
+                    info!("byte_data.len()={}", byte_data.len());
+
+                    if byte_data.len() == reverb_params_block_size {
+                        let reverb_data = cx.empty_array();
+
+                        for index in 0..reverb_params_block_size {
+                            let js_reverb_byte_data = cx.number(byte_data[index]);
+                            let _ = reverb_data.set(&mut cx, index as u32, js_reverb_byte_data);
+                        }
+
+                        return Ok(reverb_data);
+                    }
+                    else {
+                        info!("byte_data is not {}", reverb_params_block_size);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.empty_array())
+}
+
+fn sampler_effect_update(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_effect_update...");
+
+    if let Ok(effect_number) = cx.argument::<JsNumber>(0) {
+        let effect_number = effect_number.value(&mut cx) as u16;
+
+        if let Ok(effect_data) = cx.argument::<JsArray>(1) {
+            if let Ok(effect_data) = effect_data.to_vec(&mut cx) {
+                let effect_params_block_size: usize = 64;
+                let mut changed_data = vec![];
+
+                for value in effect_data.iter() {
+                    if let Ok(data) = value.downcast::<JsNumber, FunctionContext>(&mut cx) {
+                        changed_data.push(data.value(&mut cx) as u8);
+                    }
+                }
+
+                // item_number, selector, offset, data
+                let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ResponseFXReverb(effect_number, 2, 0, changed_data)));
+
+                if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+                    if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                        if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                            return Ok(cx.boolean(success));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_reverb_update(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_reverb_update...");
+
+    if let Ok(reverb_number) = cx.argument::<JsNumber>(0) {
+        let reverb_number = reverb_number.value(&mut cx) as u16;
+
+        if let Ok(reverb_data) = cx.argument::<JsArray>(1) {
+            if let Ok(reverb_data) = reverb_data.to_vec(&mut cx) {
+                let reverb_params_block_size: usize = 64;
+                let mut changed_data = vec![];
+
+                for value in reverb_data.iter() {
+                    if let Ok(data) = value.downcast::<JsNumber, FunctionContext>(&mut cx) {
+                        changed_data.push(data.value(&mut cx) as u8);
+                    }
+                }
+
+                // item number, selector, offset, data
+                let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ResponseFXReverb(reverb_number, 4, 0, changed_data)));
+
+                if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+                    if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                        if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                            return Ok(cx.boolean(success));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_effect_update_part(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_effect_update_part...");
+
+    if let Ok(effect_number) = cx.argument::<JsNumber>(0) {
+        let effect_number = effect_number.value(&mut cx) as u16;
+
+        if let Ok(offset) = cx.argument::<JsNumber>(1) {
+            let offset = offset.value(&mut cx) as u16;
+        
+            if let Ok(effect_data) = cx.argument::<JsArray>(2) {
+                if let Ok(effect_data) = effect_data.to_vec(&mut cx) {
+                    let mut changed_data = vec![];
+
+                    for value in effect_data.iter() {
+                        if let Ok(data) = value.downcast::<JsNumber, FunctionContext>(&mut cx) {
+                            changed_data.push(data.value(&mut cx) as u8);
+                        }
+                    }
+
+                    // item_number, selector, offset, data
+                    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ResponseFXReverb(effect_number, 2, offset, changed_data)));
+
+                    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+                        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                                return Ok(cx.boolean(success));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_reverb_update_part(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_reverb_update_part...");
+
+    if let Ok(reverb_number) = cx.argument::<JsNumber>(0) {
+        let reverb_number = reverb_number.value(&mut cx) as u16;
+
+        if let Ok(offset) = cx.argument::<JsNumber>(1) {
+            let offset = offset.value(&mut cx) as u16;
+
+            if let Ok(reverb_data) = cx.argument::<JsArray>(2) {
+                if let Ok(reverb_data) = reverb_data.to_vec(&mut cx) {
+                    let mut changed_data = vec![];
+
+                    for value in reverb_data.iter() {
+                        if let Ok(data) = value.downcast::<JsNumber, FunctionContext>(&mut cx) {
+                            changed_data.push(data.value(&mut cx) as u8);
+                        }
+                    }
+
+                    // item number, selector, offset, data
+                    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ResponseFXReverb(reverb_number, 4, offset, changed_data)));
+
+                    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+                        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                            if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                                return Ok(cx.boolean(success));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_program_effect_assignments(mut cx: FunctionContext) -> JsResult<JsArray> {
+    info!("Entered sampler_program_effect_assignments...");
+    let assignment_params_block_size: usize = 1;
+    let all_assignment_blocks_size = 128 * assignment_params_block_size;
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestFXReverb(0, 1, all_assignment_blocks_size as u16, 0)));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::FXReverb(byte_data) = sampler_event {
+                info!("byte_data.len()={}", byte_data.len());
+
+                if byte_data.len() == all_assignment_blocks_size {
+                    let program_effect_assignments = cx.empty_array();
+
+                    for program_number in (0..all_assignment_blocks_size).step_by(assignment_params_block_size) {
+                        let js_effect_assignment = cx.number(byte_data[program_number]);
+                        let _ = program_effect_assignments.set(&mut cx, program_number as u32, js_effect_assignment);
+                    }
+
+                    return Ok(program_effect_assignments);
+                }
+                else {
+                    info!("byte_data is not {}", all_assignment_blocks_size);
+                }
+            }
+        }
+    }
+
+    Ok(cx.empty_array())
+}
+
+fn sampler_program_reverb_assignments(mut cx: FunctionContext) -> JsResult<JsArray> {
+    info!("Entered sampler_program_reverb_assignments...");
+    let assignment_params_block_size: usize = 1;
+    let all_assignment_blocks_size = 128 * assignment_params_block_size;
+    let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestFXReverb(0, 3, all_assignment_blocks_size as u16, 0)));
+    if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::FXReverb(byte_data) = sampler_event {
+                info!("byte_data.len()={}", byte_data.len());
+
+                if byte_data.len() == all_assignment_blocks_size {
+                    let program_reverb_assignments = cx.empty_array();
+
+                    for program_number in (0..all_assignment_blocks_size).step_by(assignment_params_block_size) {
+                        let js_reverb_assignment = cx.number(byte_data[program_number]);
+                        let _ = program_reverb_assignments.set(&mut cx, program_number as u32, js_reverb_assignment);
+                    }
+
+                    return Ok(program_reverb_assignments);
+                }
+                else {
+                    info!("byte_data is not {}", all_assignment_blocks_size);
+                }
+            }
+        }
+    }
+
+    Ok(cx.empty_array())
+}
+
+fn sampler_program_effect_assignment(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_program_effect_assignment...");
+    if let Ok(program_number) = cx.argument::<JsNumber>(0) {
+        let program_number = program_number.value(&mut cx) as u16;
+
+        if let Ok(effect_number) = cx.argument::<JsNumber>(1) {
+            let effect_number = effect_number.value(&mut cx) as u8;
+    
+            let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ResponseFXReverb(program_number, 1, 0, vec![effect_number])));
+            if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+                if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                    if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                        return Ok(cx.boolean(success))
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_program_reverb_assignment(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_program_reverb_assignment...");
+    if let Ok(program_number) = cx.argument::<JsNumber>(0) {
+        let program_number = program_number.value(&mut cx) as u16;
+
+        if let Ok(reverb_number) = cx.argument::<JsNumber>(1) {
+            let reverb_number = reverb_number.value(&mut cx) as u8;
+    
+            let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ResponseFXReverb(program_number, 3, 0, vec![reverb_number])));
+            if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+                if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                    if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                        return Ok(cx.boolean(success))
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+
+fn sampler_select_harddrive_volume(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_select_harddrive_volume...");
+    if let Ok(volume_number) = cx.argument::<JsNumber>(0) {
+        let volume_number = volume_number.value(&mut cx) as u8;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::SelectHardDriveVolume(volume_number)));
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(s1000_command_reply) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = s1000_command_reply {
+                    return Ok(cx.boolean(success))
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_clear_memory_and_load_from_selected_volume(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_clear_memory_and_load_from_selected_volume...");
+    if let Ok(load_type) = cx.argument::<JsNumber>(0) {
+        let load_type = load_type.value(&mut cx) as u8;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ClearMemoryAndLoadFromSelectedVolume(load_type)));
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(s1000_command_reply) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = s1000_command_reply {
+                    return Ok(cx.boolean(success))
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+
+}
+
+fn sampler_load_from_selected_volume(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_load_from_selected_volume...");
+    if let Ok(load_type) = cx.argument::<JsNumber>(0) {
+        let load_type = load_type.value(&mut cx) as u8;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::LoadFromSelectedVolume(load_type)));
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(s1000_command_reply) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = s1000_command_reply {
+                    return Ok(cx.boolean(success))
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_clear_volume_and_save_memory_to_selected_volume(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_clear_volume_and_save_memory_to_selected_volume...");
+    if let Ok(save_type) = cx.argument::<JsNumber>(0) {
+        let save_type = save_type.value(&mut cx) as u8;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ClearVolumeAndSaveMemoryToSelectedVolume(save_type)));
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(s1000_command_reply) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = s1000_command_reply {
+                    return Ok(cx.boolean(success))
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
+fn sampler_save_memory_to_selected_volume(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_save_memory_to_selected_volume...");
+    if let Ok(save_type) = cx.argument::<JsNumber>(0) {
+        let save_type = save_type.value(&mut cx) as u8;
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::SaveMemoryToSelectedVolume(save_type)));
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(LOAD_SAVE_ENTIRE_VOLUME_RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(s1000_command_reply) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = s1000_command_reply {
+                    return Ok(cx.boolean(success))
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
 fn sampler_request_volume_list_entry(mut cx: FunctionContext) -> JsResult<JsObject> {
     info!("Entered sampler_request_volume_list_entry...");
     if let Ok(entry_number) = cx.argument::<JsNumber>(0) {
         let entry_number = entry_number.value(&mut cx) as u16;
         let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestVolumeList(entry_number)));
         if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-            if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                if let OutgoingSamplerEvent::VolumeList(name, error) = sample_event {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::VolumeList(name, error, active, volume_type) = sampler_event {
                     let message = cx.empty_object();
                     let js_name = cx.string(name);
                     let entry_number = cx.number(entry_number);
+                    let js_active = cx.boolean(active);
+                    let js_volume_type = cx.number(volume_type);
 
                     let _ = message.set(&mut cx, "entry_number", entry_number);
                     let _ = message.set(&mut cx, "entry_name", js_name);
+                    let _ = message.set(&mut cx, "active", js_active);
+                    let _ = message.set(&mut cx, "type", js_volume_type);
                     
                     if let Some(error) = error {
                         let js_error = cx.string(error);
@@ -1752,8 +2494,8 @@ fn sampler_hard_disk_directory_entry(mut cx: FunctionContext) -> JsResult<JsObje
             let selector = selector.value(&mut cx) as u8;
             let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestHardDiskDirEntry(entry_number, selector)));
             if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                    if let OutgoingSamplerEvent::HardDiskDirEntry(name, error) = sample_event {
+                if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                    if let OutgoingSamplerEvent::HardDiskDirEntry(name, error) = sampler_event {
                         let message = cx.empty_object();
                         let js_name = cx.string(name);
                         let entry_number = cx.number(entry_number);
@@ -1860,8 +2602,8 @@ fn sampler_s1000_miscellaneous_data(mut cx: FunctionContext) -> JsResult<JsObjec
     let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestS1000MiscellaneousData));
     let sampler_status_report = cx.empty_object();
     if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-        if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-            if let OutgoingSamplerEvent::S1000MiscellaneousData(misc_data, error) = sample_event {
+        if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+            if let OutgoingSamplerEvent::S1000MiscellaneousData(misc_data, error) = sampler_event {
                 if error == None {
                     for (name, value) in misc_data.iter() {
                         let js_name = cx.string(name.clone());
@@ -1884,8 +2626,8 @@ fn sampler_request_miscellaneous_bytes(mut cx: FunctionContext) -> JsResult<JsBo
             let data_ban_knumber = data_ban_knumber.value(&mut cx) as u8;
             let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestMiscellaneousBytes(data_index, data_ban_knumber)));
             if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
-                if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                    if let OutgoingSamplerEvent::MiscellaneousBytes = sample_event {
+                if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                    if let OutgoingSamplerEvent::MiscellaneousBytes(name, error) = sampler_event {
                         return Ok(cx.boolean(true))
                     }
                 }
@@ -1911,8 +2653,8 @@ fn sampler_request_sample_data(mut cx: FunctionContext) -> JsResult<JsArray> {
             
             let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::RequestSampleData(sample_number, number_of_samples as u32)));
             if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(Duration::from_secs(100)) {
-                if let OutgoingEvent::SamplerEvent(sample_event) = msg {
-                    if let OutgoingSamplerEvent::SampleData(samples) = sample_event {
+                if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                    if let OutgoingSamplerEvent::SampleData(samples) = sampler_event {
                         for (index, sample) in samples.iter().enumerate() {
                             let key = cx.number(index as f64);
                             let value = cx.number(*sample as f64);
@@ -1968,7 +2710,33 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("sampler_change_program_header", sampler_change_program_header)?;
     cx.export_function("sampler_change_keygroup_header", sampler_change_keygroup_header)?;
     cx.export_function("sampler_change_sample_header", sampler_change_sample_header)?;
-    
+    cx.export_function("sampler_change_s1000_misc_bytes", sampler_change_s1000_misc_bytes)?;
+    cx.export_function("sampler_select_floppy", sampler_select_floppy)?;
+    cx.export_function("sampler_select_harddrive", sampler_select_harddrive)?;
+    cx.export_function("sampler_select_harddrive_partition", sampler_select_harddrive_partition)?;
+    cx.export_function("sampler_select_harddrive_volume", sampler_select_harddrive_volume)?;
+
+    cx.export_function("sampler_clear_memory_and_load_from_selected_volume", sampler_clear_memory_and_load_from_selected_volume)?;
+    cx.export_function("sampler_load_from_selected_volume", sampler_load_from_selected_volume)?;
+    cx.export_function("sampler_clear_volume_and_save_memory_to_selected_volume", sampler_clear_volume_and_save_memory_to_selected_volume)?;
+    cx.export_function("sampler_save_memory_to_selected_volume", sampler_save_memory_to_selected_volume)?;
+    cx.export_function("sampler_harddrive_number_of_partitions", sampler_harddrive_number_of_partitions)?;
+    cx.export_function("sampler_harddrive_partition_number_of_volumes", sampler_harddrive_partition_number_of_volumes)?;
+    cx.export_function("sampler_harddrive_selected_partition", sampler_harddrive_selected_partition)?;
+    cx.export_function("sampler_harddrive_partition_selected_volume", sampler_harddrive_partition_selected_volume)?;
+    cx.export_function("sampler_effects_list", sampler_effects_list)?;
+    cx.export_function("sampler_reverbs_list", sampler_reverbs_list)?;
+    cx.export_function("sampler_effect", sampler_effect)?;
+    cx.export_function("sampler_reverb", sampler_reverb)?;
+    cx.export_function("sampler_effect_update", sampler_effect_update)?;
+    cx.export_function("sampler_reverb_update", sampler_reverb_update)?;
+    cx.export_function("sampler_effect_update_part", sampler_effect_update_part)?;
+    cx.export_function("sampler_reverb_update_part", sampler_reverb_update_part)?;
+    cx.export_function("sampler_program_effect_assignments", sampler_program_effect_assignments)?;
+    cx.export_function("sampler_program_reverb_assignments", sampler_program_reverb_assignments)?;
+    cx.export_function("sampler_program_effect_assignment", sampler_program_effect_assignment)?;
+    cx.export_function("sampler_program_reverb_assignment", sampler_program_reverb_assignment)?;
+
     // setup logging
     let logger_init_result = Logger::try_with_str("debug");
     let _logger = if let Ok(logger) = logger_init_result {
@@ -2009,8 +2777,16 @@ fn kick_off_midir() {
             if let Ok(mut client_request_received) = client_request_received.lock() {
                 if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
                     if !*client_request_received && sysex_to_sampler_queue.len() > 0 {
-                        *client_request_received = true;
                         if let Some(message) = sysex_to_sampler_queue.pop_front() {
+                            // only set this for messages to be sent to the sampler that require a response
+                            // check the sysex message opcode
+                            // start with a hardcoded list then refactor
+                            if let Some(opcode) = message.get(3) {
+                                if *opcode != 0x11 {
+                                    *client_request_received = true;
+                                }
+                            }
+    
                             if let Some(connection) = output_connection.as_mut() {
                                 string_buf.push_str(format!("Sending to sampler: ").as_str());
                                 for value in message.iter() {
@@ -2019,10 +2795,17 @@ fn kick_off_midir() {
                                 info!("{}", string_buf.as_str());
                                 string_buf.clear();
                                 let _ = connection.send(&message);
+                                info!("Finished sending to sampler.");
                             }
                         }
                     }
                 }
+                else {
+                    info!("Couldn't lock sysex_to_sampler_queue.");
+                }
+                }
+            else {
+                info!("Couldn't lock client_request_received.");
             }
 
             if let Ok(received) = in_comm_channels.rx.try_recv() {
@@ -2481,7 +3264,7 @@ fn kick_off_midir() {
 
                                 message.push(EOX);
 
-                                print!("Sending to sampler - program header change: ");
+                                print!("program header change: ");
                                 for value in message.iter() {
                                     print!("{:X}, ", value);
                                 }
@@ -2531,7 +3314,7 @@ fn kick_off_midir() {
 
                                 message.push(EOX);
 
-                                print!("Sending to sampler - keygroup header change: ");
+                                print!("keygroup header change: ");
                                 for value in message.iter() {
                                     print!("{:X}, ", value);
                                 }
@@ -2581,7 +3364,7 @@ fn kick_off_midir() {
 
                                 message.push(EOX);
 
-                                print!("Sending to sampler - sample header change: ");
+                                print!("sample header change: ");
                                 for value in message.iter() {
                                     print!("{:X}, ", value);
                                 }
@@ -2704,17 +3487,21 @@ fn kick_off_midir() {
                                     sysex_to_sampler_queue.push_back(message);
                                 }
                             }
-                            IncomingSamplerEvent::RequestFXReverb(effect_number, selector) => {
+                            IncomingSamplerEvent::RequestFXReverb(item_number, selector, number_of_bytes_of_data_to_get, offset) => {
                                 info!("Received request FX/Reverb from client.");
                                 info!("Sending request FX/Reverb to sampler.");
                                 let mut message = vec![];
-                                let effect_number_lsb = (effect_number & U16_LSB_TO_AKAI_U8_MASK) as u8;
-                                let effect_number_msb = (effect_number >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
-                                let number_of_bytes_of_data_lsb = (AKAI_HEADER_SIZE_IN_BYTES & U16_LSB_TO_AKAI_U8_MASK) as u8;
-                                let number_of_bytes_of_data_msb = (AKAI_HEADER_SIZE_IN_BYTES >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
+                                let effect_number_lsb = (item_number & U16_LSB_TO_AKAI_U8_MASK) as u8;
+                                let effect_number_msb = (item_number >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
+                                let number_of_bytes_of_data_lsb = (number_of_bytes_of_data_to_get & U16_LSB_TO_AKAI_U8_MASK) as u8;
+                                let number_of_bytes_of_data_msb = (number_of_bytes_of_data_to_get >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
+                                let data_byte_offset_lsb = (offset as u16 & U16_LSB_TO_AKAI_U8_MASK) as u8;
+                                let data_byte_offset_msb = ((offset as u16) >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
 
                                 info!("Effect number lsb={}, msb={}", effect_number_lsb, effect_number_msb);
                                 info!("Number of bytes of data lsb={}, msb={}", number_of_bytes_of_data_lsb, number_of_bytes_of_data_msb);
+                                info!("Byte offset into data lsb={}, msb={}", data_byte_offset_lsb, data_byte_offset_msb);
+
 
                                 message.push(START_OF_SYSTEM_EXCLUSIVE);
                                 message.push(SAMPLER_MANUFACTURER_CODE);
@@ -2724,10 +3511,56 @@ fn kick_off_midir() {
                                 message.push(effect_number_lsb);
                                 message.push(effect_number_msb);
                                 message.push(selector);
-                                message.push(0x00);
-                                message.push(0x00);
+
+                                // byte off set into data for selectors: 0, 2 and 4 (0 offset only for 1 and 3)
+                                message.push(data_byte_offset_lsb);
+                                message.push(data_byte_offset_msb);
+
                                 message.push(number_of_bytes_of_data_lsb);
                                 message.push(number_of_bytes_of_data_msb);
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::ResponseFXReverb(item_number, selector, offset, data) => {
+                                info!("Received response (change sampler data) FX/Reverb from client.");
+                                info!("Sending response (change sampler data) FX/Reverb to sampler.");
+                                let mut message = vec![];
+                                let item_number_lsb = (item_number & U16_LSB_TO_AKAI_U8_MASK) as u8;
+                                let item_number_msb = (item_number >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
+                                let number_of_bytes_of_data_lsb = (data.len() as u16 & U16_LSB_TO_AKAI_U8_MASK) as u8;
+                                let number_of_bytes_of_data_msb = ((data.len() as u16) >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
+                                let data_byte_offset_lsb = (offset as u16 & U16_LSB_TO_AKAI_U8_MASK) as u8;
+                                let data_byte_offset_msb = ((offset as u16) >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
+
+                                info!("Effect number lsb={}, msb={}", item_number_lsb, item_number_msb);
+                                info!("Number of bytes of data lsb={}, msb={}", number_of_bytes_of_data_lsb, number_of_bytes_of_data_msb);
+                                info!("Byte offset into data lsb={}, msb={}", data_byte_offset_lsb, data_byte_offset_msb);
+
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseFXReverb as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(item_number_lsb);
+                                message.push(item_number_msb);
+                                message.push(selector);
+
+                                // byte off set into data for selectors: 0, 2 and 4 (0 offset only for 1 and 3)
+                                message.push(data_byte_offset_lsb);
+                                message.push(data_byte_offset_msb);
+
+                                message.push(number_of_bytes_of_data_lsb);
+                                message.push(number_of_bytes_of_data_msb);
+
+                                // nibbled data being sent
+                                for value in data.iter() {
+                                    message.push(value & 15); // lsb first
+                                    message.push(value >> 4); // msb last
+                                }
+                                
                                 message.push(EOX);
 
                                 if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
@@ -2840,14 +3673,316 @@ fn kick_off_midir() {
                                     sysex_to_sampler_queue.push_back(message);
                                 }
                             }
+                            IncomingSamplerEvent::SelectFloppy => {
+                                info!("Received select floppy drive.");
+                                info!("Sending select floppy drive.");
+                                let mut message = vec![];
+
+                                // F0 47 00 34 48 00 00 01 00 00 01 00 00 00 F7
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::SelectHardDrive => {
+                                info!("Received select hard drive.");
+                                info!("Sending select hard drive.");
+                                let mut message = vec![];
+
+                                // F0 47 00 34 48 00 00 01 00 00 01 00 01 00 F7 - possible hard drive 1
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::HardDriveNumberOfPartitions => {
+                                info!("Received hard drive number of partitions.");
+                                info!("Sending hard drive number of partitions.");
+                                let mut message = vec![];
+
+                                // F0 47 00 33 48 01 00 01 00 00 01 00 F7 - get the number of partitions on the currently selected hard drive - doesn't seem to work
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::RequestMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::HardDriveSelectedPartition => {
+                                info!("Received hard drive selected partition.");
+                                info!("Sending hard drive selected partition.");
+                                let mut message = vec![];
+
+                                // F0 47 00 33 48 02 00 01 00 00 01 00 F7
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::RequestMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x02);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::SelectHardDrivePartition(partition_number) => {
+                                info!("Received select hard drive partition.");
+                                info!("Sending select hard drive partition.");
+                                let mut message = vec![];
+
+                                // F0 47 00 34 48 02 00 01 00 00 01 00 00 00 F7 - select partition A
+                                // F0 47 00 34 48 02 00 01 00 00 01 00 01 00 F7 - select partition B
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x02);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(partition_number & 15); // lsb first
+                                message.push(partition_number >> 4); // msb last
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::HardDrivePartitionNumberOfVolumes => {
+                                info!("Received hard drive partition number of volumes.");
+                                info!("Sending hard drive partition number of volumes.");
+                                let mut message = vec![];
+
+                                // F0 47 00 33 48 03 00 01 00 00 01 00 F7 - get the number of volumes in the currently selected partition - doesn't seem to work
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::RequestMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x03);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::HardDrivePartitionSelectedVolume => {
+                                info!("Received hard drive partition selected volume.");
+                                info!("Sending hard drive partition selected volume.");
+                                let mut message = vec![];
+
+                                // F0 47 00 33 48 04 00 01 00 00 01 00 F7
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::RequestMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x04);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::SelectHardDriveVolume(volume_number) => {
+                                info!("Received select hard drive volume.");
+                                info!("Sending select hard drive volume.");
+                                let mut message = vec![];
+
+                                // F0 47 00 34 48 04 00 01 00 00 01 00 00 00 F7 - select volume 1
+                                // F0 47 00 34 48 04 00 01 00 00 01 00 01 00 F7 - select volume 2
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x04);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(volume_number & 15); // lsb first
+                                message.push(volume_number >> 4); // msb last
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::ClearMemoryAndLoadFromSelectedVolume(load_type) => {
+                                info!("Received clear memory and load from the selected volume into memory.");
+                                info!("Sending clear memory and load from the selected volume into memory.");
+                                let mut message = vec![];
+
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x07);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(load_type & 15); // lsb first
+                                message.push(load_type >> 4); // msb last
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::LoadFromSelectedVolume(load_type) => {
+                                info!("Received load from the selected volume into memory.");
+                                info!("Sending load from the selected volume into memory.");
+                                let mut message = vec![];
+
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x06);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(load_type & 15); // lsb first
+                                message.push(load_type >> 4); // msb last
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::ClearVolumeAndSaveMemoryToSelectedVolume(save_type) => {
+                                info!("Received clear volume and save memory to the selected volume.");
+                                info!("Sending clear volume and save memory to the selected volume.");
+                                let mut message = vec![];
+
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x09);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(save_type & 15); // lsb first
+                                message.push(save_type >> 4); // msb last
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
+                            IncomingSamplerEvent::SaveMemoryToSelectedVolume(save_type) => {
+                                info!("Received save memory to the selected volume.");
+                                info!("Sending save memory to the selected volume.");
+                                let mut message = vec![];
+
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S3000SysexFunctionCodes::ResponseMiscellaneous as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(0x08);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(0x00);
+                                message.push(0x01);
+                                message.push(0x00);
+                                message.push(save_type & 15); // lsb first
+                                message.push(save_type >> 4); // msb last
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
                             IncomingSamplerEvent::RequestVolumeList(entry_number) => {
                                 info!("Received request volume list from client.");
                                 info!("Sending request volume list to sampler.");
                                 let mut message = vec![];
                                 let entry_number_lsb = (entry_number & U16_LSB_TO_AKAI_U8_MASK) as u8;
                                 let entry_number_msb = (entry_number >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
-                                let number_of_bytes_of_data_lsb = (NAME_ENTRY_SIZE_IN_BYTES & U16_LSB_TO_AKAI_U8_MASK) as u8;
-                                let number_of_bytes_of_data_msb = (NAME_ENTRY_SIZE_IN_BYTES >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
+                                let number_of_bytes_of_data_lsb = (VOLUME_LIST_ENTRY_SIZE_IN_BYTES & U16_LSB_TO_AKAI_U8_MASK) as u8;
+                                let number_of_bytes_of_data_msb = (VOLUME_LIST_ENTRY_SIZE_IN_BYTES >> U16_MSB_TO_AKAI_U8_BIT_RIGHT_SHIFT_AMOUNT) as u8;
 
                                 info!("Entry number lsb={}, msb={}", entry_number_lsb, entry_number_msb);
                                 info!("Number of bytes of data lsb={}, msb={}", number_of_bytes_of_data_lsb, number_of_bytes_of_data_msb);
@@ -2950,7 +4085,34 @@ fn kick_off_midir() {
                                     sysex_to_sampler_queue.push_back(message);
                                 }
                             }
-                            
+                            IncomingSamplerEvent::ChangeS1000MiscBytes(basic_midi_channel, selected_program_number, midi_play_commands_omni_override, midi_exlusive_channel, basic_channel_omni, midi_program_select_enable) => {
+                                info!("Received change S1000 miscellaneous bytes from client.");
+                                info!("Sending change S1000 miscellaneous bytes to sampler.");
+                                let mut message = vec![];
+
+                                message.push(START_OF_SYSTEM_EXCLUSIVE);
+                                message.push(SAMPLER_MANUFACTURER_CODE);
+                                message.push(0x00);
+                                message.push(S1000SysexFunctionCodes::MDATA as u8);
+                                message.push(SAMPLER_IDENTITY);
+                                message.push(basic_midi_channel & 15); // lsb first
+                                message.push(basic_midi_channel >> 4); // msb last
+                                message.push(basic_channel_omni & 15); // lsb first
+                                message.push(basic_channel_omni >> 4); // msb last
+                                message.push(midi_program_select_enable & 15); // lsb first
+                                message.push(midi_program_select_enable >> 4); // msb last
+                                message.push(selected_program_number & 15); // lsb first
+                                message.push(selected_program_number >> 4); // msb last
+                                message.push(midi_play_commands_omni_override & 15); // lsb first
+                                message.push(midi_play_commands_omni_override >> 4); // msb last
+                                message.push(midi_exlusive_channel & 15); // lsb first
+                                message.push(midi_exlusive_channel >> 4); // msb last
+                                message.push(EOX);
+
+                                if let Ok(mut sysex_to_sampler_queue) = sysex_to_sampler_queue.lock() {
+                                    sysex_to_sampler_queue.push_back(message);
+                                }
+                            }
                         }
                     }
                 }

@@ -38,11 +38,11 @@ jobs:
     - name: npm run build sampler-editor-librarian-dto
       working-directory: ./modules/sampler-editor-librarian-dto
       run: npm run build
-    - name: npm i sampler-editor-librarian-client
-      working-directory: ./modules/sampler-editor-librarian-client
+    - name: npm i sampler-editor-librarian-client-angular
+      working-directory: ./modules/sampler-editor-librarian-client-angular
       run: npm i
-    - name: npm run build sampler-editor-librarian-client
-      working-directory: ./modules/sampler-editor-librarian-client
+    - name: npm run build sampler-editor-librarian-client-angular
+      working-directory: ./modules/sampler-editor-librarian-client-angular
       run: npm run build
     - name: npm i sampler-editor-librarian
       run: npm i
@@ -82,11 +82,11 @@ jobs:
 #     - name: npm run build sampler-editor-librarian-dto
 #       working-directory: ./modules/sampler-editor-librarian-dto
 #       run: npm run build
-#     - name: npm i sampler-editor-librarian-client
-#       working-directory: ./modules/sampler-editor-librarian-client
+#     - name: npm i sampler-editor-librarian-client-angular
+#       working-directory: ./modules/sampler-editor-librarian-client-angular
 #       run: npm i
-#     - name: npm run build sampler-editor-librarian-client
-#       working-directory: ./modules/sampler-editor-librarian-client
+#     - name: npm run build sampler-editor-librarian-client-angular
+#       working-directory: ./modules/sampler-editor-librarian-client-angular
 #       run: npm run build
 #     - name: npm i sampler-editor-librarian
 #       run: npm i
@@ -135,11 +135,11 @@ jobs:
     - name: npm run build sampler-editor-librarian-dto
       working-directory: ./modules/sampler-editor-librarian-dto
       run: npm run build
-    - name: npm i sampler-editor-librarian-client
-      working-directory: ./modules/sampler-editor-librarian-client
+    - name: npm i sampler-editor-librarian-client-angular
+      working-directory: ./modules/sampler-editor-librarian-client-angular
       run: npm i
-    - name: npm run build sampler-editor-librarian-client
-      working-directory: ./modules/sampler-editor-librarian-client
+    - name: npm run build sampler-editor-librarian-client-angular
+      working-directory: ./modules/sampler-editor-librarian-client-angular
       run: npm run build
     - name: npm i sampler-editor-librarian
       run: npm i
