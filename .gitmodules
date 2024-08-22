@@ -4,3 +4,6 @@
 [submodule "modules/sampler-editor-librarian-dto"]
 	path = modules/sampler-editor-librarian-dto
 	url = git@github.com:khremeviuc1004/sampler-editor-librarian-dto.git
+[submodule "modules/sampler-editor-librarian-client-angular"]
+	path = modules/sampler-editor-librarian-client-angular
+	url = git@github.com:khremeviuc1004/sampler-editor-librarian-client-angular.git
