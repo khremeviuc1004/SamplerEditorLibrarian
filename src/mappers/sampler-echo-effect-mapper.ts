@@ -53,10 +53,55 @@ export class EchoEffectMapper
   }
 
   mapFromUIDataByIndex(index: number, uiData: number): Array<number> {
-    return [];
+    console.log(
+      'Delay effect mapper - mapFromUIDataByIndex - received: ',
+      uiData,
+    );
+
+    const effectMapper = new SamplerEffectMapper();
+    const data = effectMapper.mapFromUIDataByIndex(index, uiData);
+
+    if (data.length == 0) {
+      switch (index) {
+        case 58:
+        case 59:
+        case 60:
+          data.push(this.convertFromPlusOrMinusFifty(uiData));
+          break;
+        case 49:
+        case 51:
+        case 53:
+        case 61:
+          data.push(uiData & 255);
+          data.push(uiData >> 8);
+          break;
+        default:
+          data.push(uiData);
+      }
+    }
+
+    if (data.length == 2) {
+      console.log(
+        'Delay effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+        data[1],
+      );
+    } else {
+      console.log(
+        'Delay effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+      );
+    }
+
+    return data;
   }
 
   mapFromUIName(index: number, name: string): Array<number> {
-    return [];
+    switch (index) {
+      case 0:
+        return this.convertNameToSamplerSysexName(name);
+      default:
+        throw new Error('Index for name field is not correct.');
+    }
   }
 }

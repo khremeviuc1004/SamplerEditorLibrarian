@@ -13,12 +13,12 @@ export class PitchShiftEffectMapper
     effectMapper.mapFromSysexData(data, effect);
 
     effect.leftTuneOffset = this.convertToPlusOrMinusFiftyIncludingFraction(
-      data[39],
       data[40],
+      data[39],
     );
     effect.rightTuneOffset = this.convertToPlusOrMinusFiftyIncludingFraction(
-      data[41],
       data[42],
+      data[41],
     );
     effect.leftFeedbackLevel = data[43];
     effect.rightFeedbackLevel = data[44];
@@ -55,10 +55,55 @@ export class PitchShiftEffectMapper
   }
 
   mapFromUIDataByIndex(index: number, uiData: number): Array<number> {
-    return [];
+    console.log(
+      'Pitch Shift effect mapper - mapFromUIDataByIndex - received: ',
+      uiData,
+    );
+
+    const effectMapper = new SamplerEffectMapper();
+    const data = effectMapper.mapFromUIDataByIndex(index, uiData);
+
+    if (data.length == 0) {
+      switch (index) {
+        case 39:
+        case 41:
+          const value =
+            this.convertFromPlusOrMinusFiftyIncludingFraction(uiData);
+          data.push(value[0]);
+          data.push(value[1]);
+          break;
+        case 45:
+        case 47:
+          data.push(uiData & 255);
+          data.push(uiData >> 8);
+          break;
+        default:
+          data.push(uiData);
+      }
+    }
+
+    if (data.length == 2) {
+      console.log(
+        'Pitch Shift effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+        data[1],
+      );
+    } else {
+      console.log(
+        'Pitch Shift effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+      );
+    }
+
+    return data;
   }
 
   mapFromUIName(index: number, name: string): Array<number> {
-    return [];
+    switch (index) {
+      case 0:
+        return this.convertNameToSamplerSysexName(name);
+      default:
+        throw new Error('Index for name field is not correct.');
+    }
   }
 }

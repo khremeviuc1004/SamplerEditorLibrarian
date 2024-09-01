@@ -45,33 +45,42 @@ export class SamplerReverbMapper
   mapFromUIDataByIndex(index: number, uiData: number): Array<number> {
     const data = new Array<number>();
 
-    console.log("Reverb mapper - mapFromUIDataByIndex - received: ", uiData)
+    console.log('Reverb mapper - mapFromUIDataByIndex - received: ', uiData);
 
     switch (index) {
       case 16:
-        data.push(this.convertFromPlusOrMinusFifty(uiData))
+        data.push(this.convertFromPlusOrMinusFifty(uiData));
         break;
       case 21:
-          data.push(uiData & 255)
-          data.push(uiData >> 8)
-          break
+        data.push(uiData & 255);
+        data.push(uiData >> 8);
+        break;
       default:
-          data.push(uiData)
+        data.push(uiData);
     }
 
     if (data.length == 2) {
-        console.log("Delay effect mapper - mapFromUIDataByIndex - converted to: ", data[0], data[1])
-    }
-    else {
-        console.log("Delay effect mapper - mapFromUIDataByIndex - converted to: ", data[0])
+      console.log(
+        'Delay effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+        data[1],
+      );
+    } else {
+      console.log(
+        'Delay effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+      );
     }
 
     return data;
   }
 
   mapFromUIName(index: number, name: string): Array<number> {
-    const data = new Array<number>();
-
-    return data;
+    switch (index) {
+      case 0:
+        return this.convertNameToSamplerSysexName(name);
+      default:
+        throw new Error('Index for name field is not correct.');
+    }
   }
 }

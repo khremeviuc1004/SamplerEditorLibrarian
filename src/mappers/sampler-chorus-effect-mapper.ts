@@ -32,9 +32,39 @@ export class ChorusEffectMapper
     return data;
   }
   mapFromUIDataByIndex(index: number, uiData: number): Array<number> {
-    return [];
+    console.log(
+      'Chorus effect mapper - mapFromUIDataByIndex - received: ',
+      uiData,
+    );
+
+    const effectMapper = new SamplerEffectMapper();
+    const data = effectMapper.mapFromUIDataByIndex(index, uiData);
+
+    if (data.length == 0) {
+      data.push(uiData);
+    }
+
+    if (data.length == 2) {
+      console.log(
+        'Chorus effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+        data[1],
+      );
+    } else {
+      console.log(
+        'Chorus effect mapper - mapFromUIDataByIndex - converted to: ',
+        data[0],
+      );
+    }
+
+    return data;
   }
   mapFromUIName(index: number, name: string): Array<number> {
-    return [];
+    switch (index) {
+      case 0:
+        return this.convertNameToSamplerSysexName(name);
+      default:
+        throw new Error('Index for name field is not correct.');
+    }
   }
 }

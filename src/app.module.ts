@@ -9,7 +9,7 @@ import { MidiModule } from './midi/midi.module';
     ServeStaticModule.forRoot({
       rootPath: join(
         __dirname,
-        '../modules/sampler-editor-librarian-client/build',
+        '../modules/sampler-editor-librarian-client-angular/dist/sampler-editor-librarian-client-angular/browser/',
       ),
     }),
   ],

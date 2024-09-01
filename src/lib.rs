@@ -2198,6 +2198,26 @@ fn sampler_harddrive_partition_selected_volume(mut cx: FunctionContext) -> JsRes
     Ok(cx.number(0))
 }
 
+fn sampler_effect_header_filename_update(mut cx: FunctionContext) -> JsResult<JsBoolean> {
+    info!("Entered sampler_effect_header_filename_update...");
+
+    if let Ok(effect_filename) = cx.argument::<JsString>(0) {
+        let effect_filename = effect_filename.value(&mut cx);
+        let s3000_filename = convert_name_to_sampler_sysex_name(effect_filename);
+        let _ = INCOMING_COMM_CHANNELS.tx.send(IncomingEvent::SamplerEvent(IncomingSamplerEvent::ResponseFXReverb(0, 0, 3, s3000_filename)));
+
+        if let Ok(msg) = OUT_GOING_COMM_CHANNELS.rx.recv_timeout(RECEIVE_TIMEOUT.clone()) {
+            if let OutgoingEvent::SamplerEvent(sampler_event) = msg {
+                if let OutgoingSamplerEvent::S1000CommandReply(success) = sampler_event {
+                    return Ok(cx.boolean(success));
+                }
+            }
+        }
+    }
+
+    Ok(cx.boolean(false))
+}
+
 fn sampler_effects_list(mut cx: FunctionContext) -> JsResult<JsArray> {
     info!("Entered sampler_effects_list...");
     let effect_params_block_size: usize = 64;
@@ -2353,6 +2373,8 @@ fn sampler_effect_update(mut cx: FunctionContext) -> JsResult<JsBoolean> {
             if let Ok(effect_data) = effect_data.to_vec(&mut cx) {
                 let effect_params_block_size: usize = 64;
                 let mut changed_data = vec![];
+
+                info!("effect_data: length={}", effect_data.len());
 
                 for value in effect_data.iter() {
                     if let Ok(data) = value.downcast::<JsNumber, FunctionContext>(&mut cx) {
@@ -3158,13 +3180,14 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("sampler_save_memory_to_selected_volume", sampler_save_memory_to_selected_volume)?;
     cx.export_function("sampler_save_memory_to_new_volume", sampler_save_memory_to_new_volume)?;
 
+    cx.export_function("sampler_effect_header_filename_update", sampler_effect_header_filename_update)?;
     cx.export_function("sampler_effects_list", sampler_effects_list)?;
     cx.export_function("sampler_reverbs_list", sampler_reverbs_list)?;
     cx.export_function("sampler_effect", sampler_effect)?;
     cx.export_function("sampler_reverb", sampler_reverb)?;
     cx.export_function("sampler_effect_update", sampler_effect_update)?;
-    cx.export_function("sampler_reverb_update", sampler_reverb_update)?;
     cx.export_function("sampler_effect_update_part", sampler_effect_update_part)?;
+    cx.export_function("sampler_reverb_update", sampler_reverb_update)?;
     cx.export_function("sampler_reverb_update_part", sampler_reverb_update_part)?;
     cx.export_function("sampler_program_effect_assignments", sampler_program_effect_assignments)?;
     cx.export_function("sampler_program_reverb_assignments", sampler_program_reverb_assignments)?;

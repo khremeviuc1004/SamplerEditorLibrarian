@@ -90,7 +90,7 @@
   },
   "pkg": {
     "scripts": "dist/**/*.js",
-    "assets": "modules/sampler-editor-librarian-client-angular/dist/browser/**/*",
+    "assets": "modules/sampler-editor-librarian-client-angular/dist/sampler-editor-librarian-client-angular/browser/**/*",
     "targets": [
       "node18-linux-x64",
       "node18-win-x64",

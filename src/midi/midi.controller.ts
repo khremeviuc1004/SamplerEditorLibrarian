@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpException,
   HttpStatus,
   Param,
@@ -617,6 +618,18 @@ export class MidiController {
     } else return true;
   }
 
+  @Get('sampler/effect-header/filename')
+  samplerEffectHeaderFilename(): any {
+    return { filename: this.midiService.samplerEffectHeaderFilename() };
+  }
+
+  @Patch('sampler/effect-header/filename/:filename')
+  samplerEffectHeaderFilenameUpdate(
+    @Param('filename') filename: string,
+  ): boolean {
+    return this.midiService.samplerEffectHeaderFilenameUpdate(filename);
+  }
+
   @Get('sampler/effects')
   samplerEffectsList(): Array<string> {
     return this.midiService.samplerEffectsList();
@@ -677,6 +690,24 @@ export class MidiController {
     }
   }
 
+  @Patch('sampler/effect/:effect_number/name/:name')
+  samplerEffectUpdateName(
+    @Param('effect_number') effectNumber: number,
+    @Param('name') name: string,
+  ) {
+    console.log(
+      'MidiController.samplerEffectUpdateName: effect number, name',
+      effectNumber,
+      name,
+    );
+    if (!this.midiService.samplerEffectUpdateName(effectNumber, name)) {
+      throw new HttpException(
+        'Sampler did not like part name change for effect.',
+        HttpStatus.NOT_ACCEPTABLE,
+      );
+    }
+  }
+
   @Put('sampler/reverb/:reverb_number')
   samplerReverbUpdate(
     @Param('reverb_number') reverbNumber: number,
@@ -700,6 +731,24 @@ export class MidiController {
     if (!this.midiService.samplerReverbUpdatePart(reverbNumber, index, value)) {
       throw new HttpException(
         'Sampler did not like part change for reverb.',
+        HttpStatus.NOT_ACCEPTABLE,
+      );
+    }
+  }
+
+  @Patch('sampler/reverb/:reverb_number/name/:name')
+  samplerReverbUpdateName(
+    @Param('reverb_number') reverbNumber: number,
+    @Param('name') name: string,
+  ) {
+    console.log(
+      'MidiController.samplerReverbUpdateName: reverb number, name',
+      reverbNumber,
+      name,
+    );
+    if (!this.midiService.samplerReverbUpdateName(reverbNumber, name)) {
+      throw new HttpException(
+        'Sampler did not like name change for reverb.',
         HttpStatus.NOT_ACCEPTABLE,
       );
     }

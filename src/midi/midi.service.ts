@@ -18,6 +18,7 @@ import { PitchShiftEffectMapper } from 'src/mappers/sampler-pitch-shift-effect-m
 import { ChorusEffectMapper } from 'src/mappers/sampler-chorus-effect-mapper';
 import { DelayEffectMapper } from 'src/mappers/sampler-delay-effect-mapper';
 import { EchoEffectMapper } from 'src/mappers/sampler-echo-effect-mapper';
+import { SamplerEffectMapper } from 'src/mappers/sampler-effect-mapper';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const midilib = require('../../index.node');
@@ -493,6 +494,14 @@ export class MidiService {
     return midilib.sampler_save_memory_to_new_volume(saveType);
   }
 
+  samplerEffectHeaderFilename(): string {
+    return midilib.sampler_request_fx_file_name();
+  }
+
+  samplerEffectHeaderFilenameUpdate(filename: string): boolean {
+    return midilib.sampler_effect_header_filename_update(filename);
+  }
+
   samplerEffectsList(): Array<string> {
     return midilib.sampler_effects_list();
   }
@@ -546,12 +555,22 @@ export class MidiService {
     value: number,
   ): boolean {
     const mapper = EffectMapperFactory.createMapperFromEffectType(effect_type);
+    const data = mapper.mapFromUIDataByIndex(index, value);
+
+    console.log('data', data);
 
     return midilib.sampler_effect_update_part(
       effect_number,
       index,
       mapper.mapFromUIDataByIndex(index, value),
     );
+  }
+
+  samplerEffectUpdateName(effect_number: number, name: string): boolean {
+    const mapper = new SamplerEffectMapper();
+    const data = mapper.mapFromUIName(0, name);
+    console.log('samplerEffectUpdateName: name={}', data);
+    return midilib.sampler_effect_update_part(effect_number, 0, data);
   }
 
   samplerReverbUpdate(reverbNumber: number, reverb: Reverb): boolean {
@@ -570,6 +589,15 @@ export class MidiService {
       reverbNumber,
       index,
       mapper.mapFromUIDataByIndex(index, value),
+    );
+  }
+
+  samplerReverbUpdateName(reverbNumber: number, name: string): boolean {
+    const mapper = new SamplerReverbMapper();
+    return midilib.sampler_reverb_update_part(
+      reverbNumber,
+      0,
+      mapper.mapFromUIName(0, name),
     );
   }
 
