@@ -179,11 +179,13 @@ export class MidiController {
     // get samples
     let numberOfFiles = this.midiService.samplerMiscellaneousBytes(1, 2); //SINVOL
     for (let entryNumber = 0; entryNumber < numberOfFiles; entryNumber++) {
-      const entry = this.midiService.samplerRequestHardDiskDirectoryEntry(
-        entryNumber,
-        2,
-      )[0];
-      entry.type = 'sample';
+      const entry = {
+        type: 'sample',
+        ...this.midiService.samplerRequestHardDiskDirectoryEntry(
+          entryNumber,
+          2,
+        )[0],
+      };
       console.log(entry);
       entryList.push(entry);
     }
@@ -191,11 +193,13 @@ export class MidiController {
     // get cue lists
     numberOfFiles = this.midiService.samplerMiscellaneousBytes(2, 2); //QINVOL
     for (let entryNumber = 0; entryNumber < numberOfFiles; entryNumber++) {
-      const entry = this.midiService.samplerRequestHardDiskDirectoryEntry(
-        entryNumber,
-        3,
-      )[0];
-      entry.type = 'cue list';
+      const entry = {
+        type: 'cue list',
+        ...this.midiService.samplerRequestHardDiskDirectoryEntry(
+          entryNumber,
+          3,
+        )[0],
+      };
       console.log(entry);
       entryList.push(entry);
     }
@@ -203,11 +207,13 @@ export class MidiController {
     // get take lists
     numberOfFiles = this.midiService.samplerMiscellaneousBytes(3, 2); //TINVOL
     for (let entryNumber = 0; entryNumber < numberOfFiles; entryNumber++) {
-      const entry = this.midiService.samplerRequestHardDiskDirectoryEntry(
-        entryNumber,
-        4,
-      )[0];
-      entry.type = 'take list';
+      const entry = {
+        type: 'take list',
+        ...this.midiService.samplerRequestHardDiskDirectoryEntry(
+          entryNumber,
+          4,
+        )[0],
+      };
       console.log(entry);
       entryList.push(entry);
     }
@@ -215,11 +221,13 @@ export class MidiController {
     // get effects file
     numberOfFiles = this.midiService.samplerMiscellaneousBytes(4, 2); //XINVOL
     for (let entryNumber = 0; entryNumber < numberOfFiles; entryNumber++) {
-      const entry = this.midiService.samplerRequestHardDiskDirectoryEntry(
-        entryNumber,
-        5,
-      )[0];
-      entry.type = 'effects file';
+      const entry = {
+        type: 'effects file',
+        ...this.midiService.samplerRequestHardDiskDirectoryEntry(
+          entryNumber,
+          5,
+        )[0],
+      };
       console.log(entry);
       entryList.push(entry);
     }
@@ -227,11 +235,13 @@ export class MidiController {
     // get drum inputs
     numberOfFiles = this.midiService.samplerMiscellaneousBytes(5, 2); //DINVOL
     for (let entryNumber = 0; entryNumber < numberOfFiles; entryNumber++) {
-      const entry = this.midiService.samplerRequestHardDiskDirectoryEntry(
-        entryNumber,
-        6,
-      )[0];
-      entry.type = 'drum inputs';
+      const entry = {
+        type: 'drum inputs',
+        ...this.midiService.samplerRequestHardDiskDirectoryEntry(
+          entryNumber,
+          6,
+        )[0],
+      };
       console.log(entry);
       entryList.push(entry);
     }
@@ -240,11 +250,13 @@ export class MidiController {
     let programCount = 0;
     numberOfFiles = this.midiService.samplerMiscellaneousBytes(0, 2); //PINVOL
     for (let entryNumber = 0; entryNumber < numberOfFiles; entryNumber++) {
-      const entry = this.midiService.samplerRequestHardDiskDirectoryEntry(
-        entryNumber,
-        1,
-      )[0];
-      entry.type = 'program';
+      const entry = {
+        ...this.midiService.samplerRequestHardDiskDirectoryEntry(
+          entryNumber,
+          1,
+        )[0],
+        type: 'program',
+      };
       console.log(entry);
       entryList.splice(programCount, 0, entry);
       programCount++;

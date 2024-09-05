@@ -8,6 +8,11 @@ export class EchoEffectMapper
 {
   mapFromSysexData(data: Array<number>): EchoEffect {
     const effect = new EchoEffect();
+    this.mapFromSysexDataUsingExisting(data, effect);
+    return effect;
+  }
+
+  mapFromSysexDataUsingExisting(data: Array<number>, effect: EchoEffect) {
     const effectMapper = new SamplerEffectMapper();
 
     effectMapper.mapFromSysexData(data, effect);
@@ -23,8 +28,6 @@ export class EchoEffectMapper
     effect.pan3 = this.convertToPlusOrMinusFifty(data[60]);
     effect.leftExtraDelay = data[61] | (data[62] << 8);
     effect.feedbackDamping = data[63];
-
-    return effect;
   }
 
   mapToSysexData(effect: EchoEffect): Array<number> {

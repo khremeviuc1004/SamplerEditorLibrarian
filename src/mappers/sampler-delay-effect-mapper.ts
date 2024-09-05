@@ -8,6 +8,11 @@ export class DelayEffectMapper
 {
   mapFromSysexData(data: Array<number>): DelayEffect {
     const effect = new DelayEffect();
+    this.mapFromSysexDataUsingExisting(data, effect);
+    return effect;
+  }
+
+  mapFromSysexDataUsingExisting(data: Array<number>, effect: DelayEffect) {
     const effectMapper = new SamplerEffectMapper();
 
     effectMapper.mapFromSysexData(data, effect);
@@ -16,8 +21,6 @@ export class DelayEffectMapper
     effect.delayTime = data[27] | (data[28] << 8);
     effect.lfoDepth = data[29] | (data[30] << 8);
     effect.lfoRate = data[31];
-
-    return effect;
   }
 
   mapToSysexData(effect: DelayEffect): Array<number> {

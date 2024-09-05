@@ -8,6 +8,11 @@ export class PitchShiftEffectMapper
 {
   mapFromSysexData(data: Array<number>): PitchShiftEffect {
     const effect = new PitchShiftEffect();
+    this.mapFromSysexDataUsingExisting(data, effect);
+    return effect;
+  }
+
+  mapFromSysexDataUsingExisting(data: Array<number>, effect: PitchShiftEffect) {
     const effectMapper = new SamplerEffectMapper();
 
     effectMapper.mapFromSysexData(data, effect);
@@ -24,8 +29,6 @@ export class PitchShiftEffectMapper
     effect.rightFeedbackLevel = data[44];
     effect.leftDelayTime = data[45] | (data[46] << 8);
     effect.rightDelayTime = data[47] | (data[48] << 8);
-
-    return effect;
   }
 
   mapToSysexData(effect: PitchShiftEffect): Array<number> {

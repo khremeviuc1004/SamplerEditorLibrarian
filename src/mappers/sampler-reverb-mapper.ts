@@ -8,6 +8,12 @@ export class SamplerReverbMapper
   mapFromSysexData(data: Array<number>): Reverb {
     const reverb = new Reverb();
 
+    this.mapFromSysexDataUsingExisting(data, reverb);
+
+    return reverb;
+  }
+
+  mapFromSysexDataUsingExisting(data: Array<number>, reverb: Reverb) {
     reverb.name = this.convertSamplerSysexNameToName(data.slice(0, 12));
     reverb.type = data[13];
     reverb.outputLevel = data[15];
@@ -18,8 +24,6 @@ export class SamplerReverbMapper
     reverb.highFrequencyDamping = data[32];
     reverb.decayTime = data[33];
     reverb.diffusion = data[35];
-
-    return reverb;
   }
 
   mapToSysexData(reverb: Reverb): Array<number> {

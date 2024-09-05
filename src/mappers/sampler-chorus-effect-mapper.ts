@@ -8,6 +8,11 @@ export class ChorusEffectMapper
 {
   mapFromSysexData(data: Array<number>): ChorusEffect {
     const effect = new ChorusEffect();
+    this.mapFromSysexDataUsingExisting(data, effect);
+    return effect;
+  }
+
+  mapFromSysexDataUsingExisting(data: Array<number>, effect: ChorusEffect) {
     const effectMapper = new SamplerEffectMapper();
 
     effectMapper.mapFromSysexData(data, effect);
@@ -15,8 +20,6 @@ export class ChorusEffectMapper
     effect.modulationSpeed = data[36];
     effect.modulationDepth = data[37];
     effect.feedbackLevel = data[38];
-
-    return effect;
   }
 
   mapToSysexData(effect: ChorusEffect): Array<number> {

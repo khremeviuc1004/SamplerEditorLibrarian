@@ -50,7 +50,7 @@ export class SamplerEffectMapper extends SamplerMapperBase {
     );
 
     return data;
-}
+  }
 
   mapFromUIName(index: number, name: string): number[] {
     switch (index) {
