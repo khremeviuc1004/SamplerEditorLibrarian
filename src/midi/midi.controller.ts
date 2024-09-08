@@ -706,18 +706,13 @@ export class MidiController {
   samplerEffectUpdateName(
     @Param('effect_number') effectNumber: number,
     @Param('name') name: string,
-  ) {
+  ): boolean {
     console.log(
       'MidiController.samplerEffectUpdateName: effect number, name',
       effectNumber,
       name,
     );
-    if (!this.midiService.samplerEffectUpdateName(effectNumber, name)) {
-      throw new HttpException(
-        'Sampler did not like part name change for effect.',
-        HttpStatus.NOT_ACCEPTABLE,
-      );
-    }
+    return this.midiService.samplerEffectUpdateName(effectNumber, name);
   }
 
   @Put('sampler/reverb/:reverb_number')
@@ -758,12 +753,7 @@ export class MidiController {
       reverbNumber,
       name,
     );
-    if (!this.midiService.samplerReverbUpdateName(reverbNumber, name)) {
-      throw new HttpException(
-        'Sampler did not like name change for reverb.',
-        HttpStatus.NOT_ACCEPTABLE,
-      );
-    }
+    return this.midiService.samplerReverbUpdateName(reverbNumber, name);
   }
 
   @Get('sampler/program/effect/assignments')

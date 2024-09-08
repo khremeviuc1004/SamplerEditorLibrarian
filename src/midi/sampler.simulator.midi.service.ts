@@ -554,8 +554,16 @@ export class SamplerSimulatorMidiService extends MidiService {
 
     return filesInMemory;
   }
-  samplerStatusReport() {
-    throw new Error('Method not implemented.');
+  samplerStatusReport(): any {
+    return {
+      software_version_minor: 7,
+      software_version_major: 1,
+      max_blocks: 200,
+      free_blocks: 200,
+      max_sample_words: 50,
+      free_words: 50,
+      exclusive_channel: 0,
+    };
   }
   samplerS1000MiscellaneousData(): any {
     return {
@@ -1063,14 +1071,15 @@ export class SamplerSimulatorMidiService extends MidiService {
   samplerEffect(
     effectNumber: number,
   ): PitchShiftEffect | EchoEffect | DelayEffect | ChorusEffect {
-    if (effectNumber < 50) {
+    if (effectNumber >= 0 && effectNumber < 50) {
+      console.log('Effect: ', this.effects[effectNumber]);
       return this.effects[effectNumber];
     }
 
     return null;
   }
   samplerReverb(reverbNumber: number): Reverb {
-    if (reverbNumber < 50) {
+    if (reverbNumber >= 0 && reverbNumber < 50) {
       return this.reverbs[reverbNumber];
     }
 
@@ -1080,7 +1089,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     effectNumber: number,
     effect: PitchShiftEffect | EchoEffect | DelayEffect | ChorusEffect,
   ): boolean {
-    if (effectNumber < 50) {
+    if (effectNumber >= 0 && effectNumber < 50) {
       this.effects.splice(effectNumber, 1, effect);
       return true;
     }
@@ -1093,7 +1102,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     index: number,
     value: number,
   ): boolean {
-    if (effect_number < 50) {
+    if (effect_number >= 0 && effect_number < 50) {
       let mapper = null;
       const effectType: EffectType = effect_type;
 
@@ -1127,7 +1136,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     return false;
   }
   samplerEffectUpdateName(effect_number: number, name: string): boolean {
-    if (effect_number < 50 && name && name.length <= 12) {
+    if (effect_number >= 0 && effect_number < 50 && name && name.length <= 12) {
       this.effects[effect_number].name = name;
       return true;
     }
@@ -1135,7 +1144,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     return false;
   }
   samplerReverbUpdate(reverbNumber: number, reverb: Reverb): boolean {
-    if (reverbNumber < 50) {
+    if (reverbNumber >= 0 && reverbNumber < 50) {
       this.reverbs[reverbNumber] = reverb;
       return true;
     }
@@ -1147,7 +1156,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     index: number,
     value: number,
   ): boolean {
-    if (reverbNumber < 50) {
+    if (reverbNumber >= 0 && reverbNumber < 50) {
       const mapper = new SamplerReverbMapper();
       const data = mapper.mapToSysexData(this.reverbs[reverbNumber]);
 
@@ -1162,7 +1171,12 @@ export class SamplerSimulatorMidiService extends MidiService {
     return false;
   }
   samplerReverbUpdateName(reverbNumber: number, name: string): boolean {
-    if (reverbNumber < 50 && name != null && name.trim().length <= 12) {
+    if (
+      reverbNumber >= 0 &&
+      reverbNumber < 50 &&
+      name != null &&
+      name.trim().length <= 12
+    ) {
       this.reverbs[reverbNumber].name = name;
       return true;
     }
@@ -1179,7 +1193,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     programNumber: number,
     effectNumber: number,
   ): boolean {
-    if (programNumber < 128) {
+    if (programNumber >= 0 && programNumber < 128) {
       this.effectAssignments[programNumber] = effectNumber;
       return true;
     }
@@ -1190,7 +1204,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     programNumber: number,
     reverbNumber: number,
   ): boolean {
-    if (programNumber < 128) {
+    if (programNumber >= 0 && programNumber < 128) {
       this.reverbAssignments[programNumber] = reverbNumber;
       return true;
     }

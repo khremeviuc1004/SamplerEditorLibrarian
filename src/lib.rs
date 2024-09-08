@@ -2882,7 +2882,7 @@ fn sampler_status_report(mut cx: FunctionContext) -> JsResult<JsObject> {
                     let keys = status_data.keys().sorted();
                     for name in keys.into_iter() {
                         if let Some(value) = status_data.get(name) {
-                            let js_name = cx.string(name.replace("_", " "));
+                            let js_name = cx.string(name);
                             let js_value = cx.number(*value);
                             let _ = sampler_status_report.set(&mut cx, js_name, js_value);
                         }
