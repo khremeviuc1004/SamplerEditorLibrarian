@@ -45,6 +45,11 @@ type Volume = {
   take_lists: SamplerFile;
 };
 
+type ScsiDisk = {
+  partitions: string[];
+  volumeMap: Map<string, Volume[]>; // key - partition
+};
+
 const BASIC_CHANNEL_OMNI = 'basic_channel_omni';
 const BASIC_MIDI_CHANNEL = 'basic_midi_channel';
 const MIDI_PROGRAM_SELECT_ENABLE = 'midi_program_select_enable';
@@ -54,9 +59,8 @@ const MIDI_EXLUSIVE_CHANNEL = 'midi_exlusive_channel';
 
 @Injectable()
 export class SamplerSimulatorMidiService extends MidiService {
-  // hard disk
-  partitions = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-  volumeMap = new Map<string, Array<Volume>>(); // partition is the key
+  // scsi hard disks
+  scsiDisks = new Map<number, ScsiDisk>();
 
   // memory
   memoryPrograms = new Array<Program>();
@@ -85,6 +89,7 @@ export class SamplerSimulatorMidiService extends MidiService {
   selectedPartition = 0;
   selectedVolume = 0;
   selectedFileIndex = 0;
+  activeScsiId = 5;
 
   // midi
   midiInputPorts = ['input 1', 'input 2'];
@@ -98,26 +103,8 @@ export class SamplerSimulatorMidiService extends MidiService {
     // build the simulator data
     this.createDefaultMemoryData();
 
-    for (
-      let partitionIndex = 0;
-      partitionIndex < this.partitions.length;
-      partitionIndex++
-    ) {
-      this.createPartition(
-        this.partitions[partitionIndex],
-        7,
-        [2, 3, 4, 5, 6, 7, 8],
-        [
-          [1, 2],
-          [1, 2, 3],
-          [1, 2, 3, 4],
-          [1, 2, 3, 4, 5],
-          [1, 2, 3, 4, 5, 6],
-          [1, 2, 3, 4, 5, 6, 7],
-          [1, 2, 3, 4, 5, 6, 7, 8],
-        ],
-      );
-    }
+    // build the disk data
+    this.createDisks();
 
     this.createMiscellaneousData();
   }
@@ -136,7 +123,65 @@ export class SamplerSimulatorMidiService extends MidiService {
     this.memorySamples.push(sineWaveSample);
   }
 
+  private createDisks(): void {
+    const scsiDisk5 = {
+      partitions: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'],
+      volumeMap: new Map<string, Array<Volume>>(),
+    };
+    for (
+      let partitionIndex = 0;
+      partitionIndex < scsiDisk5.partitions.length;
+      partitionIndex++
+    ) {
+      this.createPartition(
+        scsiDisk5.volumeMap,
+        5,
+        scsiDisk5.partitions[partitionIndex],
+        7,
+        [2, 3, 4, 5, 6, 7, 8],
+        [
+          [1, 2],
+          [1, 2, 3],
+          [1, 2, 3, 4],
+          [1, 2, 3, 4, 5],
+          [1, 2, 3, 4, 5, 6],
+          [1, 2, 3, 4, 5, 6, 7],
+          [1, 2, 3, 4, 5, 6, 7, 8],
+        ],
+      );
+    }
+    this.scsiDisks.set(5, scsiDisk5);
+
+    const scsiDisk6 = {
+      partitions: ['A', 'B', 'C', 'D'],
+      volumeMap: new Map<string, Array<Volume>>(),
+    };
+
+    for (
+      let partitionIndex = 0;
+      partitionIndex < scsiDisk6.partitions.length;
+      partitionIndex++
+    ) {
+      this.createPartition(
+        scsiDisk6.volumeMap,
+        6,
+        scsiDisk6.partitions[partitionIndex],
+        7,
+        [4, 5, 6, 7],
+        [
+          [1, 2, 3, 4],
+          [1, 2, 3, 4, 5],
+          [1, 2, 3, 4, 5, 6],
+          [1, 2, 3, 4, 5, 6, 7],
+        ],
+      );
+    }
+    this.scsiDisks.set(6, scsiDisk6);
+  }
+
   private createPartition(
+    volumeMap: Map<string, Volume[]>,
+    scsiNumber: number,
     partitionLetter: string,
     numberOfVolumes: number,
     numberOfPrograms: Array<number>,
@@ -148,7 +193,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     for (let volumeIndex = 0; volumeIndex < numberOfVolumes; volumeIndex++) {
       const volumeNumber = volumeIndex + 1;
       const volume: Volume = this.createVolume(
-        partitionLetter + ' ' + 'V' + volumeNumber,
+        'D' + scsiNumber + ' ' + partitionLetter + ' ' + 'V' + volumeNumber,
       );
       partitionVolumes.push(volume);
 
@@ -193,7 +238,7 @@ export class SamplerSimulatorMidiService extends MidiService {
       volume.samples.push(pulseWaveSample);
     }
 
-    this.volumeMap.set(partitionLetter, partitionVolumes);
+    volumeMap.set(partitionLetter, partitionVolumes);
   }
 
   private createVolume(name: string): Volume {
@@ -302,13 +347,18 @@ export class SamplerSimulatorMidiService extends MidiService {
     return false;
   }
   samplerRequestVolumeListEntry(entryNumber: number): any {
+    const activeScsiDisk = this.scsiDisks.get(this.activeScsiId);
     if (
       entryNumber <
-      this.volumeMap.get(this.partitions[this.selectedPartition]).length
+      activeScsiDisk.volumeMap.get(
+        activeScsiDisk.partitions[this.selectedPartition],
+      ).length
     ) {
-      const volume = this.volumeMap.get(
-        this.partitions[this.selectedPartition],
-      )[entryNumber];
+      const volume = this.scsiDisks
+        .get(this.activeScsiId)
+        .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
+        entryNumber
+      ];
       return {
         entry_number: entryNumber,
         entry_name: volume.name,
@@ -424,13 +474,16 @@ export class SamplerSimulatorMidiService extends MidiService {
     entryNumber: number,
     selector: number,
   ): any {
+    const activeScsiDisk = this.scsiDisks.get(this.activeScsiId);
     switch (selector) {
       case 1: // programs
         return [
           {
             model: 1,
             file_type: 243,
-            name: this.volumeMap.get(this.partitions[this.selectedPartition])[
+            name: this.scsiDisks
+              .get(this.activeScsiId)
+              .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
               this.selectedVolume
             ].programs[entryNumber].name,
           },
@@ -440,7 +493,9 @@ export class SamplerSimulatorMidiService extends MidiService {
           {
             model: 1,
             file_type: 243,
-            name: this.volumeMap.get(this.partitions[this.selectedPartition])[
+            name: this.scsiDisks
+              .get(this.activeScsiId)
+              .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
               this.selectedVolume
             ].samples[entryNumber].name,
           },
@@ -450,7 +505,9 @@ export class SamplerSimulatorMidiService extends MidiService {
           {
             model: 1,
             file_type: 243,
-            name: this.volumeMap.get(this.partitions[this.selectedPartition])[
+            name: this.scsiDisks
+              .get(this.activeScsiId)
+              .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
               this.selectedVolume
             ].cue_lists.filename,
           },
@@ -460,7 +517,9 @@ export class SamplerSimulatorMidiService extends MidiService {
           {
             model: 1,
             file_type: 243,
-            name: this.volumeMap.get(this.partitions[this.selectedPartition])[
+            name: this.scsiDisks
+              .get(this.activeScsiId)
+              .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
               this.selectedVolume
             ].take_lists.filename,
           },
@@ -470,7 +529,9 @@ export class SamplerSimulatorMidiService extends MidiService {
           {
             model: 1,
             file_type: 243,
-            name: this.volumeMap.get(this.partitions[this.selectedPartition])[
+            name: this.scsiDisks
+              .get(this.activeScsiId)
+              .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
               this.selectedVolume
             ].effects_file.filename,
           },
@@ -480,7 +541,9 @@ export class SamplerSimulatorMidiService extends MidiService {
           {
             model: 1,
             file_type: 243,
-            name: this.volumeMap.get(this.partitions[this.selectedPartition])[
+            name: this.scsiDisks
+              .get(this.activeScsiId)
+              .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
               this.selectedVolume
             ].drum_inputs.filename,
           },
@@ -615,6 +678,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     return true;
   }
   samplerMiscellaneousBytes(dataIndex: number, dataBankNumber: number): number {
+    const activeScsiDisk = this.scsiDisks.get(this.activeScsiId);
     if (dataBankNumber === 2 && dataIndex === 11) {
       return this.selectedFileIndex;
     }
@@ -622,9 +686,9 @@ export class SamplerSimulatorMidiService extends MidiService {
       return this.memoryPrograms.length + this.memorySamples.length + 4;
     }
     if (dataIndex === 1 && dataBankNumber === 2) {
-      return this.volumeMap.get(this.partitions[this.selectedPartition])[
-        this.selectedVolume
-      ].samples.length;
+      return activeScsiDisk.volumeMap.get(
+        activeScsiDisk.partitions[this.selectedPartition],
+      )[this.selectedVolume].samples.length;
     } //SINVOL
     if (dataIndex === 2 && dataBankNumber === 2) {
       return 1;
@@ -639,10 +703,15 @@ export class SamplerSimulatorMidiService extends MidiService {
       return 1;
     } //DINVOL
     if (dataIndex === 0 && dataBankNumber === 2) {
-      return this.volumeMap.get(this.partitions[this.selectedPartition])[
+      return this.scsiDisks
+        .get(this.activeScsiId)
+        .volumeMap.get(activeScsiDisk.partitions[this.selectedPartition])[
         this.selectedVolume
       ].programs.length;
     } //PINVOL
+    if (dataBankNumber === 1 && dataIndex === 11) {
+      return this.activeScsiId;
+    }
 
     return 0;
   }
@@ -667,6 +736,10 @@ export class SamplerSimulatorMidiService extends MidiService {
     }
     if (dataBankNumber === 1 && dataIndex === 56) {
       this.miscellaneousData.set(MIDI_EXLUSIVE_CHANNEL, value);
+      return true;
+    }
+    if (dataBankNumber === 1 && dataIndex === 11) {
+      this.activeScsiId = value;
       return true;
     }
 
@@ -852,13 +925,15 @@ export class SamplerSimulatorMidiService extends MidiService {
     return true;
   }
   samplerHardDriveNumberOfPartitions(): number {
-    return this.partitions.length;
+    return this.scsiDisks.get(this.activeScsiId).partitions.length;
   }
   samplerHardDriveSelectedPartition(): number {
     return this.selectedPartition;
   }
   samplerSelectHardDrivePartition(partitionNumber: number): boolean {
-    if (partitionNumber < this.partitions.length) {
+    if (
+      partitionNumber < this.scsiDisks.get(this.activeScsiId).partitions.length
+    ) {
       this.selectedPartition = partitionNumber;
 
       return true;
@@ -867,9 +942,13 @@ export class SamplerSimulatorMidiService extends MidiService {
     return false;
   }
   samplerSelectHardDriveVolume(volumeNumber: number): boolean {
-    const partitionVolumes = this.volumeMap.get(
-      this.partitions[this.selectedPartition],
-    );
+    const partitionVolumes = this.scsiDisks
+      .get(this.activeScsiId)
+      .volumeMap.get(
+        this.scsiDisks.get(this.activeScsiId).partitions[
+          this.selectedPartition
+        ],
+      );
     if (partitionVolumes && volumeNumber < partitionVolumes.length) {
       this.selectedVolume = volumeNumber;
 
@@ -879,9 +958,13 @@ export class SamplerSimulatorMidiService extends MidiService {
     return false;
   }
   samplerHardDrivePartitionNumberOfVolumes(): number {
-    const partitionVolumes = this.volumeMap.get(
-      this.partitions[this.selectedPartition],
-    );
+    const partitionVolumes = this.scsiDisks
+      .get(this.activeScsiId)
+      .volumeMap.get(
+        this.scsiDisks.get(this.activeScsiId).partitions[
+          this.selectedPartition
+        ],
+      );
     if (partitionVolumes) {
       return partitionVolumes.length;
     }
@@ -905,9 +988,13 @@ export class SamplerSimulatorMidiService extends MidiService {
   }
   samplerLoadFromSelectedVolume(loadType: number): boolean {
     const diskAccess: DiskAccessReadWrite = loadType;
-    const volume = this.volumeMap.get(this.partitions[this.selectedPartition])[
-      this.selectedVolume
-    ];
+    const volume = this.scsiDisks
+      .get(this.activeScsiId)
+      .volumeMap.get(
+        this.scsiDisks.get(this.activeScsiId).partitions[
+          this.selectedPartition
+        ],
+      )[this.selectedVolume];
 
     switch (diskAccess) {
       case DiskAccessReadWrite.ENTIRE_VOLUME:
@@ -952,9 +1039,13 @@ export class SamplerSimulatorMidiService extends MidiService {
   }
   samplerClearVolumeAndSaveMemoryToSelectedVolume(saveType: number): boolean {
     const diskAccess: DiskAccessReadWrite = saveType;
-    const volume = this.volumeMap.get(this.partitions[this.selectedPartition])[
-      this.selectedVolume
-    ];
+    const volume = this.scsiDisks
+      .get(this.activeScsiId)
+      .volumeMap.get(
+        this.scsiDisks.get(this.activeScsiId).partitions[
+          this.selectedPartition
+        ],
+      )[this.selectedVolume];
 
     switch (diskAccess) {
       case DiskAccessReadWrite.ENTIRE_VOLUME:
@@ -995,9 +1086,13 @@ export class SamplerSimulatorMidiService extends MidiService {
   }
   samplerSaveMemoryToSelectedVolume(saveType: number): boolean {
     const diskAccess: DiskAccessReadWrite = saveType;
-    const volume = this.volumeMap.get(this.partitions[this.selectedPartition])[
-      this.selectedVolume
-    ];
+    const volume = this.scsiDisks
+      .get(this.activeScsiId)
+      .volumeMap.get(
+        this.scsiDisks.get(this.activeScsiId).partitions[
+          this.selectedPartition
+        ],
+      )[this.selectedVolume];
 
     switch (diskAccess) {
       case DiskAccessReadWrite.ENTIRE_VOLUME:
@@ -1032,8 +1127,12 @@ export class SamplerSimulatorMidiService extends MidiService {
     }
   }
   samplerSaveMemoryToNewVolume(saveType: number): boolean {
-    const partitionLetter = this.partitions[this.selectedPartition];
-    const volumeMap = this.volumeMap.get(partitionLetter);
+    const partitionLetter = this.scsiDisks.get(this.activeScsiId).partitions[
+      this.selectedPartition
+    ];
+    const volumeMap = this.scsiDisks
+      .get(this.activeScsiId)
+      .volumeMap.get(partitionLetter);
     const volumeNumber = volumeMap.length;
     const volume = this.createVolume(
       partitionLetter + ' ' + 'V' + volumeNumber,
