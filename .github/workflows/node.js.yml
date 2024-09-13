@@ -103,7 +103,7 @@ jobs:
     - name: npm run build-release sampler-editor-librarian
       run: npm run build-release
     - name: Setup tmate session
-      if: {{ failure() }}
+      if: failure()
       uses: mxschmitt/action-tmate@v3
     - name: npm install -g pkg sampler-editor-librarian
       run: npm install -g pkg
