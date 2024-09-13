@@ -1,3 +1,8 @@
+
+# - name: Setup tmate session
+#   if: failure()
+#   uses: mxschmitt/action-tmate@v3
+
 name: Node.js CI
 
 on:
@@ -19,7 +24,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [20.x]
 
     steps:
     - uses: actions/checkout@v3
@@ -55,7 +60,7 @@ jobs:
     - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
       run: pkg --debug -c ./package.json ./dist/main.js
     - name: 'Upload Linux Artifcat'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: sampler-editor-librarian-linux
         path: ./sampler-editor-librarian-linux
@@ -67,7 +72,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [20.x]
 
     steps:
     - uses: actions/checkout@v3
@@ -100,11 +105,6 @@ jobs:
         override: true
     - name: Install nestjs CLI
       run: npm i -g @nestjs/cli
-    # - name: npm run build-release sampler-editor-librarian
-    #   run: npm run build-release
-    # - name: Setup tmate session
-    #   if: failure()
-    #   uses: mxschmitt/action-tmate@v3
     - name: nest build
       run: nest build
     - name: npm run neon:build -- --release
@@ -114,7 +114,7 @@ jobs:
     - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
       run: pkg --debug -c ./package.json ./dist/main.js
     - name: 'Upload Windows Artifcat'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: sampler-editor-librarian-win.exe
         path: ./sampler-editor-librarian-win.exe
@@ -127,7 +127,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x]
+        node-version: [20.x]
 
     steps:
     - uses: actions/checkout@v3
@@ -159,7 +159,7 @@ jobs:
     - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
       run: pkg --debug -c ./package.json ./dist/main.js
     - name: 'Upload Mac OS Artifcat'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: sampler-editor-librarian-macos
         path: ./sampler-editor-librarian-macos
