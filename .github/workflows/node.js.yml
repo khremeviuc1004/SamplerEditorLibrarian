@@ -100,15 +100,15 @@ jobs:
         override: true
     - name: Install nestjs CLI
       run: npm i -g @nestjs/cli
-    - name: nest build
-      run: nest build
-    -name: npm run neon:build -- --release
-      run: npm run neon:build -- --release
     # - name: npm run build-release sampler-editor-librarian
     #   run: npm run build-release
     # - name: Setup tmate session
     #   if: failure()
     #   uses: mxschmitt/action-tmate@v3
+    - name: nest build
+      run: nest build
+    - name: npm run neon:build -- --release
+      run: npm run neon:build -- --release
     - name: npm install -g pkg sampler-editor-librarian
       run: npm install -g pkg
     - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
