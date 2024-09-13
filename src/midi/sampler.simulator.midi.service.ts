@@ -83,12 +83,13 @@ export class SamplerSimulatorMidiService extends MidiService {
           return new DelayEffect();
       }
     });
-  effectAssignments = Array.from({ length: 128 }, () => 0);
+  effectAssignments = Array.from({ length: 128 }, (value, index) => index % 50);
   reverbs = Array.from({ length: 50 }, () => new Reverb());
-  reverbAssignments = Array.from({ length: 128 }, () => 0);
+  reverbAssignments = Array.from({ length: 128 }, (value, index) => index % 50);
   selectedPartition = 0;
   selectedVolume = 0;
-  selectedFileIndex = 0;
+  selectedVolumeEntry = 0;
+  selectedMemoryFileIndex = 0;
   activeScsiId = 5;
 
   // midi
@@ -680,7 +681,10 @@ export class SamplerSimulatorMidiService extends MidiService {
   samplerMiscellaneousBytes(dataIndex: number, dataBankNumber: number): number {
     const activeScsiDisk = this.scsiDisks.get(this.activeScsiId);
     if (dataBankNumber === 2 && dataIndex === 11) {
-      return this.selectedFileIndex;
+      return this.selectedMemoryFileIndex;
+    }
+    if (dataBankNumber === 2 && dataIndex === 7) {
+      return this.selectedVolumeEntry;
     }
     if (dataBankNumber === 2 && dataIndex === 10) {
       return this.memoryPrograms.length + this.memorySamples.length + 4;
@@ -727,7 +731,7 @@ export class SamplerSimulatorMidiService extends MidiService {
     // const MIDI_PLAY_COMMANDS_OMNI_OVERRIDE = 'midi_play_commands_omni_override';
     // const MIDI_EXLUSIVE_CHANNEL = 'midi_exlusive_channel';
     if (dataBankNumber === 2 && dataIndex === 11) {
-      this.selectedFileIndex = value;
+      this.selectedMemoryFileIndex = value;
       return true;
     }
     if (dataBankNumber === 1 && dataIndex === 55) {
@@ -740,6 +744,10 @@ export class SamplerSimulatorMidiService extends MidiService {
     }
     if (dataBankNumber === 1 && dataIndex === 11) {
       this.activeScsiId = value;
+      return true;
+    }
+    if (dataBankNumber === 2 && dataIndex === 7) {
+      this.selectedVolumeEntry = value;
       return true;
     }
 
