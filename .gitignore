@@ -44,6 +44,11 @@ index.node
 index.node.bak
 
 # packaged node executables
-sampler-editor-librarian-linux
-sampler-editor-librarian-macos
-sampler-editor-librarian-win.exe
+sampler-editor-librarian-angular-linux
+sampler-editor-librarian-angular-macos
+sampler-editor-librarian-angular-win.exe
+sampler-editor-librarian-react-linux
+sampler-editor-librarian-react-macos
+sampler-editor-librarian-react-win.exe
+sampler-editor-librarian.iml
+src/ui-type.ts

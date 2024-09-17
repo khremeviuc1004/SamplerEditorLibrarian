@@ -1,0 +1,2 @@
+export const UI_TYPE =
+  '../modules/sampler-editor-librarian-client-angular/dist/sampler-editor-librarian-client-angular/browser/';

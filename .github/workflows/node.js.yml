@@ -65,17 +65,28 @@ jobs:
       run: npm run build
     - name: npm i sampler-editor-librarian
       run: npm i
-    - name: npm run build-release sampler-editor-librarian
+    - name: npm run build-release sampler-editor-librarian angular
       run: npm run build-release
-    - name: npm install -g pkg sampler-editor-librarian
+    - name: npm install -g pkg
       run: npm install -g pkg
-    - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
-      run: pkg --debug -c ./package.json ./dist/main.js
-    - name: 'Upload Linux Artifcat'
+    - name: pkg --debug -c ./pkg-angular.json -o sampler-editor-librarian-angular ./dist/main.js
+      run: pkg --debug -c ./pkg-angular.json -o sampler-editor-librarian-angular ./dist/main.js
+    - name: 'Upload Linux Angular Artifcat'
       uses: actions/upload-artifact@v4
       with:
-        name: sampler-editor-librarian-linux
-        path: ./sampler-editor-librarian-linux
+        name: sampler-editor-librarian-angular-linux
+        path: ./sampler-editor-librarian-angular-linux
+    - name: Copy react ui type file to code base
+      run: cp ./ui-type-react ./src/ui-type.ts
+    - name: npm run build-release sampler-editor-librarian react
+      run: npm run build-release
+    - name: pkg --debug -c ./pkg-react.json -o sampler-editor-librarian-react ./dist/main.js
+      run: pkg --debug -c ./pkg-react.json -o sampler-editor-librarian-react ./dist/main.js
+    - name: 'Upload Linux React Artifcat'
+      uses: actions/upload-artifact@v4
+      with:
+        name: sampler-editor-librarian-react-linux
+        path: ./sampler-editor-librarian-react-linux
         
   windows_build:
     name: Windows build
@@ -129,19 +140,30 @@ jobs:
         override: true
     - name: Install nestjs CLI
       run: npm i -g @nestjs/cli
-    - name: nest build
+    - name: nest build sampler-editor-librarian angular
       run: nest build
     - name: npm run neon:build -- --release
       run: npm run neon:build -- --release
-    - name: npm install -g pkg sampler-editor-librarian
+    - name: npm install -g pkg
       run: npm install -g pkg
-    - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
-      run: pkg --debug -c ./package.json ./dist/main.js
-    - name: 'Upload Windows Artifcat'
+    - name: pkg --debug -c ./pkg-angular.json -o sampler-editor-librarian-angular ./dist/main.js
+      run: pkg --debug -c ./pkg-angular.json -o sampler-editor-librarian-angular ./dist/main.js
+    - name: 'Upload Windows Angularv Artifcat'
       uses: actions/upload-artifact@v4
       with:
-        name: sampler-editor-librarian-win.exe
-        path: ./sampler-editor-librarian-win.exe
+        name: sampler-editor-librarian-angular-win.exe
+        path: ./sampler-editor-librarian-angular-win.exe
+    - name: Copy react ui type file to code base
+      run: copy /y .\ui-type-react .\src\ui-type.ts
+    - name: npm run build-release sampler-editor-librarian react
+      run: npm run build-release
+    - name: pkg --debug -c ./pkg-react.json -o sampler-editor-librarian-react ./dist/main.js
+      run: pkg --debug -c ./pkg-react.json -o sampler-editor-librarian-react ./dist/main.js
+    - name: 'Upload Windows React Artifcat'
+      uses: actions/upload-artifact@v4
+      with:
+        name: sampler-editor-librarian-react-win.exe
+        path: ./sampler-editor-librarian-react-win.exe
 
         
   macos_build:
@@ -188,14 +210,25 @@ jobs:
       run: npm run build
     - name: npm i sampler-editor-librarian
       run: npm i
-    - name: npm run build-release sampler-editor-librarian
+    - name: npm run build-release sampler-editor-librarian angular
       run: npm run build-release
-    - name: npm install -g pkg sampler-editor-librarian
-      run: npm install -g pkg
-    - name: pkg --debug -c ./package.json ./dist/main.js sampler-editor-librarian
-      run: pkg --debug -c ./package.json ./dist/main.js
-    - name: 'Upload Mac OS Artifcat'
+    - name: npm install -g pkg
+      run: npm install -g pkg 
+    - name: pkg --debug -c ./pkg-angular.json -o sampler-editor-librarian-angular ./dist/main.js
+      run: pkg --debug -c ./pkg-angular.json -o sampler-editor-librarian-angular ./dist/main.js
+    - name: 'Upload Mac OS Angular Artifcat'
       uses: actions/upload-artifact@v4
       with:
-        name: sampler-editor-librarian-macos
-        path: ./sampler-editor-librarian-macos
+        name: sampler-editor-librarian-angular-macos
+        path: ./sampler-editor-librarian-angular-macos
+    - name: Copy react ui type file to code base
+      run: cp ./ui-type-react ./src/ui-type.ts
+    - name: npm run build-release sampler-editor-librarian react
+      run: npm run build-release
+    - name: pkg --debug -c ./pkg-react.json -o sampler-editor-librarian-react ./dist/main.js
+      run: pkg --debug -c ./pkg-react.json -o sampler-editor-librarian-react ./dist/main.js
+    - name: 'Upload MAC OS React Artifcat'
+      uses: actions/upload-artifact@v4
+      with:
+        name: sampler-editor-librarian-react-macos
+        path: ./sampler-editor-librarian-react-macos
