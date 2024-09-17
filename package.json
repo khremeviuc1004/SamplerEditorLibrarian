@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "type": "commonjs",
   "scripts": {
-    "build_all_on_linux": "npm install; cd ./modules/sampler-editor-librarian-dto; npm install, npm run build; cd ../sampler-editor-librarian-client-angular;npm install;npm run build;cd ../../;npm run build",
+    "build_all_on_linux": "npm install; cd ./modules/sampler-editor-librarian-dto;npm install;npm run build; cd ../sampler-editor-librarian-client-angular;npm install;npm run build;cd ../react-dial-knob;npm --force install;npm run build;cd ../sampler-editor-librarian-client-react;npm install;npm run build;cd ../../;npm run build",
     "build": "nest build; npm run neon:build",
     "build-release": "nest build; npm run neon:build -- --release",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
