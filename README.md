@@ -45,21 +45,44 @@ $ pkg --debug -c ./package.json ./dist/main.js
         url = https://github.com/khremeviuc1004/sampler-editor-librarian-dto.git`
 ```
 
-### Running from git clone
+
+## Running in a shell
+
+Running from git clone
 ```bash
 $ cd <base path to cloned git repo>/sampler-editor-librarian
 $ npm run start:debug
 ```
 
-
-## Running
-
+Running after building binaries using pkg
 ```bash
 $ ./sampler-editor-librarian-<platform>
 ```
 
 Open http://localhost:4000 in a browser, select midi input and output connections to the sampler and then navigate using the View/Sampler menu.
 
+## Running using Docker
+Build a docker image
+```bash
+$ docker buildx build -t sampler-editor-librarian:latest .
+```
+
+Run the application in simulation mode using a docker container
+```bash
+$ docker run -p 4000:4000 --env UI_TYPE=[angular|react] --env SIMULATOR=simulator  --rm -it  sampler-editor-librarian:latest
+```
+
+Run the application with access to ALSA for midi using a docker container
+```bash
+$ docker run -p 4000:4000 --env UI_TYPE=[angular|react] --device /dev/snd --rm -it  sampler-editor-librarian:latest
+```
+
+## Akai Sysex and Disk Info
+```
+Akai Disk Format
+
+https://lsnl.jp/~ohsaki/software/akaitools/S3000-format.html
+```
 
 ```
 Original S3200 sysex page here: http://web.archive.org/web/20010203002600/http://akaipro.com/ref-S3000SysEx.html
@@ -127,10 +150,4 @@ F0 47 00 34 48 01 00 00 00 00 00 00 F7 - BTSORT
 F0 47 00 34 48 01 00 06 00 00 0C 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 F7 - rename drum file name in memory
 F0 47 00 34 48 06 00 06 00 00 0C 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 09 00 F7 - rename currently selected volume - doesn't seem to work
 
-```
-
-```
-Akai Disk Format
-
-https://lsnl.jp/~ohsaki/software/akaitools/S3000-format.html
 ```
