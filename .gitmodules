@@ -7,6 +7,3 @@
 [submodule "modules/sampler-editor-librarian-client-react"]
 	path = modules/sampler-editor-librarian-client-react
 	url = git@github.com:khremeviuc1004/sampler-editor-librarian-client-react.git
-[submodule "modules/react-dial-knob"]
-	path = modules/react-dial-knob
-	url = https://github.com/apizzini/react-dial-knob.git
