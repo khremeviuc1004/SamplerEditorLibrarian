@@ -143,7 +143,7 @@ jobs:
     - name: Install nestjs CLI
       run: npm i -g @nestjs/cli
     - name: Copy angular ui type file to code base
-      run: copy /y .\ui-type-angular .\src\ui-type.ts
+      run: Copy-Item ".\ui-type-angular" -Destination ".\src\ui-type.ts" -Force
     - name: nest build sampler-editor-librarian angular
       run: nest build
     - name: npm run neon:build -- --release
@@ -158,7 +158,7 @@ jobs:
         name: sampler-editor-librarian-angular-win.exe
         path: ./sampler-editor-librarian-angular-win.exe
     - name: Copy react ui type file to code base
-      run: copy /y .\ui-type-react .\src\ui-type.ts
+      run: Copy-Item ".\ui-type-react" -Destination ".\src\ui-type.ts" -Force
     - name: npm run build-release sampler-editor-librarian react
       run: npm run build-release
     - name: pkg --debug -c ./pkg-react.json -o sampler-editor-librarian-react ./dist/main.js
