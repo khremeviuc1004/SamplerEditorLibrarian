@@ -429,6 +429,7 @@ export class SamplerSimulatorMidiService extends MidiService {
         }
 
         programKeygroups.push(keygroup);
+        program.numberOfKeyGroups += 1;
 
         return true;
       }
