@@ -190,9 +190,9 @@ jobs:
     - name: npm run build sampler-editor-librarian-client-angular
       working-directory: ./modules/sampler-editor-librarian-client-angular
       run: npm run build
-    - name: npm i react-dial-knob
-      working-directory: ./modules/react-dial-knob
-      run: npm --force i
+    - name: npm i sampler-editor-librarian-client-react
+      working-directory: ./modules/sampler-editor-librarian-client-react
+      run: npm i
     - name: npm run build sampler-editor-librarian-client-react
       working-directory: ./modules/sampler-editor-librarian-client-react
       run: npm run build
