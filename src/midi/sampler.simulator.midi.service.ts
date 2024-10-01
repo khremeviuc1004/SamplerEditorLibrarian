@@ -69,22 +69,25 @@ export class SamplerSimulatorMidiService extends MidiService {
   miscellaneousData = new Map<string, number>();
   effectsHeaderFilename = 'EFFECTS FILE';
   effects: Array<ChorusEffect | DelayEffect | EchoEffect | PitchShiftEffect> =
-    Array.from({ length: 50 }, () => {
+    Array.from({ length: 50 }, (value, index) => {
       const effectType: EffectType = Math.trunc(Math.random() * (10 - 6) + 6);
       console.log('effectType', effectType);
       switch (effectType) {
         case EffectType.CHORUS:
-          return new ChorusEffect();
+          return new ChorusEffect('Chorus ' + (index + 1));
         case EffectType.PITCH_SHIFT:
-          return new PitchShiftEffect();
+          return new PitchShiftEffect('Pitch Shift ' + (index + 1));
         case EffectType.ECHO:
-          return new EchoEffect();
+          return new EchoEffect('Echo ' + (index + 1));
         case EffectType.DELAY:
-          return new DelayEffect();
+          return new DelayEffect('Delay ' + (index + 1));
       }
     });
   effectAssignments = Array.from({ length: 128 }, (value, index) => index % 50);
-  reverbs = Array.from({ length: 50 }, () => new Reverb());
+  reverbs = Array.from(
+    { length: 50 },
+    (value, index) => new Reverb('Reverb ' + (index + 1)),
+  );
   reverbAssignments = Array.from({ length: 128 }, (value, index) => index % 50);
   selectedPartition = 0;
   selectedVolume = 0;
@@ -1269,8 +1272,12 @@ export class SamplerSimulatorMidiService extends MidiService {
       const data = mapper.mapToSysexData(this.reverbs[reverbNumber]);
 
       if (index < data.length) {
-        mapper.mapFromUIDataByIndex(index, value);
+        const changedData = mapper.mapFromUIDataByIndex(index, value);
+        for (let i = 0; i < changedData.length; i++) {
+          data[index + i] = changedData[i];
+        }
         const reverb = mapper.mapFromSysexData(data);
+        console.log("Changed reverb", reverb);
         this.reverbs.splice(reverbNumber, 1, reverb);
         return true;
       }

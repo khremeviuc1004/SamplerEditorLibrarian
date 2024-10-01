@@ -728,7 +728,7 @@ export class MidiController {
     @Param('reverb_number') reverbNumber: number,
     @Param('index') index: number,
     @Param('value') value: number,
-  ) {
+  ): Reverb {
     console.log(
       'MidiController.samplerReverbUpdatePart: reverb number, index, value',
       reverbNumber,
@@ -741,6 +741,7 @@ export class MidiController {
         HttpStatus.NOT_ACCEPTABLE,
       );
     }
+    return this.midiService.samplerReverb(reverbNumber);
   }
 
   @Patch('sampler/reverb/:reverb_number/name/:name')
